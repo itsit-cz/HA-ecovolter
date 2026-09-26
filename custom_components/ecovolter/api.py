@@ -109,7 +109,7 @@ class EcoVolterApi:
 
         # The charger API is addressed through the direct resolved IP for speed.
         # HMAC signs the exact URL sent to the charger.
-        signed_url = f"http://{ip}:{self.port}{path}"
+        signed_url = f"http://{ip}{path}"
         body = (
             json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
             if payload is not None
@@ -119,6 +119,7 @@ class EcoVolterApi:
         headers = {
             "Authorization": f"HmacSHA256 {self._signature(signed_url, timestamp, body)}",
             "X-Timestamp": timestamp,
+            "Accept": "application/json",
         }
         if payload is not None:
             headers["Content-Type"] = "application/json"
