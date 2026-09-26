@@ -5,7 +5,7 @@ PLATFORMS = ["sensor", "binary_sensor", "switch", "number"]
 
 CONF_SECRET = "secret"
 
-DEFAULT_PORT = 443
+DEFAULT_PORT = 80
 DEFAULT_SCAN_INTERVAL = 2
 DNS_REFRESH_SECONDS = 3600
 REQUEST_TIMEOUT_SECONDS = 4
