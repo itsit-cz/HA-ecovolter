@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect EcoVolter",
+        "description": "Enter the charger's IP address or hostname and Local API secret.",
+        "data": {
+          "host": "IP address or hostname",
+          "secret": "API secret"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to EcoVolter.",
+      "invalid_auth": "Authentication failed. Check the API secret.",
+      "unknown": "Unexpected error while communicating with EcoVolter."
+    },
+    "abort": {
+      "already_configured": "This EcoVolter is already configured."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power": {
+        "name": "Power"
+      },
+      "session_energy": {
+        "name": "Session energy"
+      },
+      "total_energy": {
+        "name": "Total energy"
+      },
+      "charging_count": {
+        "name": "Charging count"
+      },
+      "total_charging_time": {
+        "name": "Total charging time"
+      },
+      "current_l1": {
+        "name": "Current L1"
+      },
+      "current_l2": {
+        "name": "Current L2"
+      },
+      "current_l3": {
+        "name": "Current L3"
+      },
+      "voltage_l1": {
+        "name": "Voltage L1"
+      },
+      "voltage_l2": {
+        "name": "Voltage L2"
+      },
+      "voltage_l3": {
+        "name": "Voltage L3"
+      },
+      "active_phases": {
+        "name": "Active phases"
+      }
+    },
+    "binary_sensor": {
+      "vehicle_connected": {
+        "name": "Vehicle connected"
+      },
+      "charging": {
+        "name": "Charging"
+      }
+    },
+    "switch": {
+      "charging_enabled": {
+        "name": "Charging enabled"
+      },
+      "three_phase": {
+        "name": "Three-phase charging"
+      }
+    },
+    "number": {
+      "target_current": {
+        "name": "Charging current"
+      }
+    }
+  }
+}

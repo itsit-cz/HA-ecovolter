@@ -1,0 +1,45 @@
+type: entities
+title: 🔌 EcoVolter
+show_header_toggle: false
+entities:
+  - entity: binary_sensor.ecovolter_vehicle_connected
+    name: Vozidlo připojeno
+  - entity: binary_sensor.ecovolter_charging
+    name: Nabíjení
+  - entity: sensor.ecovolter_active_phases
+    name: Aktivní režim
+  - type: divider
+  - entity: switch.ecovolter_charging_enabled
+    name: Povolit nabíjení
+  - entity: switch.ecovolter_three_phase
+    name: 3f nabíjení
+    icon: mdi:sine-wave
+  - entity: number.ecovolter_target_current
+    name: Nabíjecí proud
+  - type: divider
+  - entity: sensor.ecovolter_power
+    name: Aktuální výkon
+  - entity: sensor.ecovolter_session_energy
+    name: Aktuální relace
+  - entity: sensor.ecovolter_total_energy
+    name: Celkem nabito
+  - entity: sensor.ecovolter_charging_count
+    name: Počet nabíjení
+  - entity: sensor.ecovolter_total_charging_time
+    name: Celková doba
+  - type: divider
+  - entity: sensor.ecovolter_current_l1
+    name: Proud L1
+  - entity: sensor.ecovolter_current_l2
+    name: Proud L2
+  - entity: sensor.ecovolter_current_l3
+    name: Proud L3
+  - type: divider
+  - entity: sensor.ecovolter_voltage_l1
+    name: Napětí L1
+  - entity: sensor.ecovolter_voltage_l2
+    name: Napětí L2
+  - entity: sensor.ecovolter_voltage_l3
+    name: Napětí L3
+grid_options:
+  columns: full

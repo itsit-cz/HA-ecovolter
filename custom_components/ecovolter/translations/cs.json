@@ -1,0 +1,83 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Připojit EcoVolter",
+        "description": "Zadejte IP adresu nebo název hostitele nabíječky a tajný klíč Local API.",
+        "data": {
+          "host": "IP adresa nebo hostname",
+          "secret": "API tajný klíč"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "K EcoVolteru se nepodařilo připojit.",
+      "invalid_auth": "Ověření selhalo. Zkontrolujte API tajný klíč.",
+      "unknown": "Při komunikaci s EcoVolterem nastala neočekávaná chyba."
+    },
+    "abort": {
+      "already_configured": "Tento EcoVolter je již nakonfigurován."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "power": {
+        "name": "Aktuální výkon"
+      },
+      "session_energy": {
+        "name": "Aktuální relace"
+      },
+      "total_energy": {
+        "name": "Celkem nabito"
+      },
+      "charging_count": {
+        "name": "Počet nabíjení"
+      },
+      "total_charging_time": {
+        "name": "Celková doba nabíjení"
+      },
+      "current_l1": {
+        "name": "Proud L1"
+      },
+      "current_l2": {
+        "name": "Proud L2"
+      },
+      "current_l3": {
+        "name": "Proud L3"
+      },
+      "voltage_l1": {
+        "name": "Napětí L1"
+      },
+      "voltage_l2": {
+        "name": "Napětí L2"
+      },
+      "voltage_l3": {
+        "name": "Napětí L3"
+      },
+      "active_phases": {
+        "name": "Aktivní fáze"
+      }
+    },
+    "binary_sensor": {
+      "vehicle_connected": {
+        "name": "Vozidlo připojeno"
+      },
+      "charging": {
+        "name": "Nabíjení"
+      }
+    },
+    "switch": {
+      "charging_enabled": {
+        "name": "Povolit nabíjení"
+      },
+      "three_phase": {
+        "name": "3f nabíjení"
+      }
+    },
+    "number": {
+      "target_current": {
+        "name": "Nabíjecí proud"
+      }
+    }
+  }
+}
