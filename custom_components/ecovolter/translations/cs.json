@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Připojit EcoVolter",
-        "description": "Zadejte IP adresu nebo název hostitele nabíječky a tajný klíč Local API.",
+        "description": "Zadejte sériové číslo, IP adresu nebo hostname nabíječky a tajný klíč Local API.",
         "data": {
-          "host": "IP adresa nebo hostname",
+          "host": "Sériové číslo, IP adresa nebo hostname",
           "secret": "API tajný klíč"
         }
       }
