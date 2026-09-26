@@ -44,6 +44,7 @@ class EcoVolterApi:
         self.port = port
         self.resolved_ip: str | None = None
         self.last_resolved: float | None = None
+        self.last_resolved_at: float | None = None
 
     @property
     def is_ip_address(self) -> bool:
