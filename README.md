@@ -1,66 +1,68 @@
-# EcoVolter for Home Assistant
+# EcoVolter pro Home Assistant
 
-[English](README.md) | [Čeština](README.cs.md)
+**Čeština** | [English](README.en.md)
 
-Custom Home Assistant integration for EcoVolter chargers using the local API.
+Vlastní integrace EcoVolter pro Home Assistant využívající lokální API nabíječky.
 
-> **Status:** early v0.1 test build. Test it locally before relying on it for unattended charging.
+> **Stav projektu:** raná testovací verze v0.1. Před použitím pro bezobslužné nabíjení ji nejprve otestujte ve své instalaci.
 
-## Features
+## Funkce
 
-- Local communication; no cloud required
-- Multiple EcoVolter chargers
-- IP address or hostname during setup
-- Cached hostname → IP resolution for fast API calls
-- DNS refresh every hour and immediate re-resolution after a network failure
-- Charging state and vehicle connection
-- Current power and session energy
-- Lifetime energy, charging count and charging time
-- Per-phase current and voltage
-- Enable/disable charging
-- Enable/disable three-phase mode
-- Set charging current from 6 to 16 A
-- Czech and English Home Assistant UI
+- Lokální komunikace bez nutnosti cloudu
+- Podpora více nabíječek EcoVolter
+- Nastavení pomocí IP adresy nebo hostname
+- Překlad hostname → IP s uložením IP pro rychlou komunikaci
+- Obnovení DNS každých 60 minut a okamžité nové přeložení při chybě spojení
+- Stav nabíjení a informace o připojeném vozidle
+- Aktuální výkon a energie aktuální nabíjecí relace
+- Celkově nabitá energie, počet nabíjení a celková doba nabíjení
+- Proud a napětí jednotlivých fází
+- Povolení a zakázání nabíjení
+- Přepínání jednofázového / třífázového režimu
+- Nastavení nabíjecího proudu 6–16 A
+- České a anglické rozhraní v Home Assistantu
 
-The integration uses the EcoVolter Local API endpoints for charger status, settings and diagnostics.
+Integrace používá lokální API EcoVolteru pro získávání stavu, diagnostických údajů a nastavení nabíječky.
 
-## Installation for testing
+## Instalace pro testování
 
-Copy:
+Zkopírujte složku:
 
 `custom_components/ecovolter`
 
-to:
+do:
 
 `/config/custom_components/ecovolter`
 
-Restart Home Assistant. Then open **Settings → Devices & services → Add integration** and search for **EcoVolter**.
+Poté restartujte Home Assistant a otevřete **Nastavení → Zařízení a služby → Přidat integraci**. Vyhledejte **EcoVolter**.
 
-Enter:
+Při konfiguraci zadejte:
 
-- the charger's IP address or hostname
-- the Local API secret
+- IP adresu nebo hostname nabíječky
+- tajný klíč Local API
 
-**Never publish your API secret.** It is stored in the Home Assistant config entry, not in this repository.
+**API tajný klíč nikdy nezveřejňujte.** Ukládá se do konfigurace Home Assistantu, nikoliv do tohoto repozitáře.
 
-## Hostname / DNS behaviour
+## Hostname / DNS
 
-When a hostname is configured, the integration resolves it and caches the resulting IP address. Normal API calls then go directly to that IP for faster communication.
+Pokud zadáte hostname, integrace jej přeloží na IP adresu a tuto IP uloží do cache. Běžná komunikace s API následně probíhá přímo přes IP adresu, aby byla co nejrychlejší.
 
-The hostname is re-resolved every 60 minutes. If a request fails because of a network/connection error, the integration immediately resolves the hostname again and retries once. Authentication failures do not trigger DNS retries.
+Hostname se znovu překládá každých 60 minut. Pokud komunikace se zapamatovanou IP selže kvůli síťové chybě, integrace okamžitě provede nový DNS překlad a požadavek jednou zopakuje.
+
+Chyba autentizace nevyvolává nový DNS překlad.
 
 ## Dashboard
 
-See `examples/dashboard.yaml`.
+Příklad karty najdete v souboru `examples/dashboard.yaml`.
 
-Entity IDs depend on the name assigned by Home Assistant. Replace the example entity IDs with your actual IDs.
+Konkrétní ID entit závisí na názvu zařízení vytvořeném v Home Assistantu. V ukázkovém dashboardu je proto nahraďte vlastními ID entit.
 
-## Notes
+## Poznámky
 
-EcoVolter and its local API are third-party products/services. This project is an independent Home Assistant integration and is not affiliated with the manufacturer.
+EcoVolter a jeho lokální API jsou produkty/služby třetí strany. Tento projekt je nezávislá integrace pro Home Assistant a není oficiálně spojen s výrobcem.
 
-Home Assistant automations are not a replacement for electrical protection or safety systems.
+Automatizace v Home Assistantu nenahrazují elektrické jištění ani jiné bezpečnostní prvky elektroinstalace.
 
-## License
+## Licence
 
 MIT © 2026 IT síť s.r.o.
