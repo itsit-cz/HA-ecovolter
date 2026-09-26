@@ -109,7 +109,7 @@ class EcoVolterApi:
 
         # The charger API is addressed through the direct resolved IP for speed.
         # HMAC signs the exact URL sent to the charger.
-        signed_url = f"http://{ip}:{self.port}{path}"
+        signed_url = f"https://{ip}:{self.port}{path}"
         body = (
             json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
             if payload is not None
@@ -130,6 +130,7 @@ class EcoVolterApi:
                 data=body if payload is not None else None,
                 headers=headers,
                 timeout=ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+                ssl=False,
             ) as response:
                 if response.status in (401, 403):
                     raise EcoVolterAuthError("Authentication failed")
