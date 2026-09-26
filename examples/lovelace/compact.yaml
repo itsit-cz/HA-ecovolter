@@ -1,0 +1,45 @@
+# EcoVolter - Compact
+# Native Home Assistant cards only.
+# Replace the example entity IDs with the IDs from your EcoVolter device.
+
+type: vertical-stack
+cards:
+  - type: tile
+    entity: binary_sensor.ecovolter_vehicle_connected
+    name: EcoVolter
+    icon: mdi:ev-station
+    state_content:
+      - state
+      - last-changed
+    features_position: bottom
+
+  - type: horizontal-stack
+    cards:
+      - type: tile
+        entity: binary_sensor.ecovolter_charging
+        name: Nabíjení
+        icon: mdi:ev-plug-type2
+        vertical: true
+      - type: tile
+        entity: sensor.ecovolter_power
+        name: Výkon
+        icon: mdi:flash
+        vertical: true
+      - type: tile
+        entity: sensor.ecovolter_session_energy
+        name: Relace
+        icon: mdi:lightning-bolt
+        vertical: true
+
+  - type: entities
+    show_header_toggle: false
+    entities:
+      - entity: switch.ecovolter_charging_enabled
+        name: Povolit nabíjení
+        icon: mdi:ev-station
+      - entity: switch.ecovolter_three_phase
+        name: 3f nabíjení
+        icon: mdi:sine-wave
+      - entity: number.ecovolter_target_current
+        name: Nabíjecí proud
+        icon: mdi:current-ac
