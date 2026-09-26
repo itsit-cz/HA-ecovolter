@@ -1,5 +1,5 @@
 
-const VERSION="0.2.0-beta.1-dev5";
+const VERSION="0.2.0-beta.1-dev6";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -29,7 +29,11 @@ class EcoVolterCard extends HTMLElement{
   const active=["current_l1","current_l2","current_l3"].filter(k=>{const x=Number(this.s(k)?.state);return Number.isFinite(x)&&x>0.05}).length;
   return active?String(active):"—";
  }
- toggle(k){const s=this.s(k);if(s)this.h.callService("homeassistant","toggle",{entity_id:s.entity_id})}
+ async toggle(k){
+  const s=this.s(k); if(!s||!["on","off"].includes(s.state))return;
+  const service=s.state==="on"?"turn_off":"turn_on";
+  await this.h.callService("switch",service,{entity_id:s.entity_id});
+ }
  current(e){const s=this.s("target_current");if(s)this.h.callService("number","set_value",{entity_id:s.entity_id,value:Number(e.target.value)})}
  draw(){
   if(!this.c)return;
