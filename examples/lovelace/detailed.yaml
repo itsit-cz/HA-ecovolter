@@ -1,0 +1,66 @@
+# EcoVolter - Detailed
+# Native Home Assistant cards only.
+# Replace the example entity IDs with the IDs from your EcoVolter device.
+
+type: vertical-stack
+cards:
+  - type: tile
+    entity: binary_sensor.ecovolter_vehicle_connected
+    name: EcoVolter
+    icon: mdi:ev-station
+
+  - type: horizontal-stack
+    cards:
+      - type: tile
+        entity: binary_sensor.ecovolter_charging
+        name: Nabíjení
+        vertical: true
+      - type: tile
+        entity: sensor.ecovolter_power
+        name: Výkon
+        vertical: true
+      - type: tile
+        entity: sensor.ecovolter_session_energy
+        name: Relace
+        vertical: true
+
+  - type: entities
+    title: Ovládání
+    show_header_toggle: false
+    entities:
+      - entity: switch.ecovolter_charging_enabled
+        name: Povolit nabíjení
+      - entity: switch.ecovolter_three_phase
+        name: 3f nabíjení
+      - entity: number.ecovolter_target_current
+        name: Nabíjecí proud
+
+  - type: entities
+    title: Fáze
+    show_header_toggle: false
+    entities:
+      - entity: sensor.ecovolter_active_phases
+        name: Aktivní fáze
+      - entity: sensor.ecovolter_current_l1
+        name: Proud L1
+      - entity: sensor.ecovolter_current_l2
+        name: Proud L2
+      - entity: sensor.ecovolter_current_l3
+        name: Proud L3
+      - entity: sensor.ecovolter_voltage_l1
+        name: Napětí L1
+      - entity: sensor.ecovolter_voltage_l2
+        name: Napětí L2
+      - entity: sensor.ecovolter_voltage_l3
+        name: Napětí L3
+
+  - type: entities
+    title: Statistiky
+    show_header_toggle: false
+    entities:
+      - entity: sensor.ecovolter_total_energy
+        name: Celkem nabito
+      - entity: sensor.ecovolter_charging_count
+        name: Počet nabíjení
+      - entity: sensor.ecovolter_total_charging_time
+        name: Celková doba nabíjení
