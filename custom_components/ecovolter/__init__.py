@@ -17,14 +17,15 @@ from .coordinator import EcoVolterCoordinator
 
 type EcoVolterConfigEntry = ConfigEntry[EcoVolterCoordinator]
 
-CARD_URL = "/ecovolter/ecovolter-card.js"
+CARD_URL = "/ecovolter/ecovolter-card.js?v=0.2.0-beta.2"
+CARD_ROUTE = "/ecovolter/ecovolter-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "ecovolter-card.js"
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Set up EcoVolter frontend resources."""
     await hass.http.async_register_static_paths(
-        [StaticPathConfig(CARD_URL, str(CARD_PATH), False)]
+        [StaticPathConfig(CARD_ROUTE, str(CARD_PATH), False)]
     )
     add_extra_js_url(hass, CARD_URL)
     return True
