@@ -4,7 +4,7 @@
 
 Vlastní integrace EcoVolter pro Home Assistant využívající lokální API nabíječky.
 
-> **Stav projektu:** raná testovací verze v0.1. Před použitím pro bezobslužné nabíjení ji nejprve otestujte ve své instalaci.
+> **Aktuální vydání:** v0.1.0. Před použitím pro bezobslužné nabíjení doporučujeme integraci nejprve otestovat ve své instalaci.
 
 ## Funkce
 
@@ -53,9 +53,13 @@ Chyba autentizace nevyvolává nový DNS překlad.
 
 ## Dashboard
 
-Příklad karty najdete v souboru `examples/dashboard.yaml`.
+V repozitáři jsou tři hotové příklady postavené pouze na nativních kartách Home Assistantu:
 
-Konkrétní ID entit závisí na názvu zařízení vytvořeném v Home Assistantu. V ukázkovém dashboardu je proto nahraďte vlastními ID entit.
+- `examples/lovelace/compact.yaml` – kompaktní karta pro běžné ovládání
+- `examples/lovelace/detailed.yaml` – detailní karta včetně fází a statistik
+- `examples/lovelace/dual-charger.yaml` – přehled pro dvě nabíječky
+
+Konkrétní ID entit závisí na názvu zařízení vytvořeném v Home Assistantu. V ukázkách proto nahraďte vzorová ID vlastními ID entit.
 
 ## Poznámky
 
