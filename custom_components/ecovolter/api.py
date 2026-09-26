@@ -39,7 +39,7 @@ class EcoVolterApi:
         port: int = DEFAULT_PORT,
     ) -> None:
         self._session = session
-        self.host = host.strip()
+        self.host = host.strip().lower()
         self._secret = secret.strip()
         self.port = port
         self.resolved_ip: str | None = None
@@ -78,13 +78,13 @@ class EcoVolterApi:
                 )
             except OSError as err:
                 raise EcoVolterConnectionError(
-                    f"Unable to resolve {self.host}"
+                    f"Unable to resolve {self.lookup_host}"
                 ) from err
 
             addresses = [info[4][0] for info in infos]
             ipv4 = [address for address in addresses if ":" not in address]
             if not addresses:
-                raise EcoVolterConnectionError(f"No address found for {self.host}")
+                raise EcoVolterConnectionError(f"No address found for {self.lookup_host}")
             self.resolved_ip = ipv4[0] if ipv4 else addresses[0]
 
         self.last_resolved = now
