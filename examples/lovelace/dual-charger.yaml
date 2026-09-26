@@ -1,0 +1,43 @@
+# EcoVolter - Dual Charger
+# Native Home Assistant cards only.
+# Replace LEFT_* and RIGHT_* example entity IDs with your actual entity IDs.
+
+type: horizontal-stack
+cards:
+  - type: entities
+    title: EcoVolter 1
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.ecovolter_left_vehicle_connected
+        name: Vozidlo
+      - entity: binary_sensor.ecovolter_left_charging
+        name: Nabíjení
+      - entity: sensor.ecovolter_left_power
+        name: Výkon
+      - entity: sensor.ecovolter_left_session_energy
+        name: Relace
+      - entity: switch.ecovolter_left_charging_enabled
+        name: Povolit nabíjení
+      - entity: switch.ecovolter_left_three_phase
+        name: 3f nabíjení
+      - entity: number.ecovolter_left_target_current
+        name: Proud
+
+  - type: entities
+    title: EcoVolter 2
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.ecovolter_right_vehicle_connected
+        name: Vozidlo
+      - entity: binary_sensor.ecovolter_right_charging
+        name: Nabíjení
+      - entity: sensor.ecovolter_right_power
+        name: Výkon
+      - entity: sensor.ecovolter_right_session_energy
+        name: Relace
+      - entity: switch.ecovolter_right_charging_enabled
+        name: Povolit nabíjení
+      - entity: switch.ecovolter_right_three_phase
+        name: 3f nabíjení
+      - entity: number.ecovolter_right_target_current
+        name: Proud
