@@ -1,5 +1,5 @@
 
-const VERSION="0.2.0";
+const VERSION="0.2.0-beta.1-dev2";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -26,8 +26,17 @@ class EcoVolterCard extends HTMLElement{
  }}
 class EcoVolterCardEditor extends HTMLElement{
  setConfig(c){this.c={variant:"compact",...c};this.draw()}
- set hass(h){this.h=h;this.load()}
- async load(){if(this.h){this.d=await devices(this.h);this.draw()}}
+ set hass(h){
+  this.h=h;
+  if(!this.d&&!this.loading)this.load();
+ }
+ async load(){
+  if(!this.h||this.loading)return;
+  this.loading=true;
+  try{this.d=await devices(this.h)}
+  finally{this.loading=false}
+  this.draw();
+ }
  change(k,v){this.c={...this.c,[k]:v};this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:this.c},bubbles:true,composed:true}));this.draw()}
  draw(){if(!this.c)return;const ds=this.d||[];this.innerHTML='<style>.w{display:grid;gap:14px}label{display:grid;gap:5px}select,input{padding:10px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);color:var(--primary-text-color)}</style><div class="w"><label>Nabíječka<select id="d"><option value="">Vyberte EcoVolter…</option>'+ds.map(d=>'<option value="'+d.id+'" '+(d.id===this.c.device?"selected":"")+'>'+(d.name_by_user||d.name||d.id)+'</option>').join("")+'</select></label><label>Varianta<select id="v"><option value="compact" '+(this.c.variant==="compact"?"selected":"")+'>Compact</option><option value="detailed" '+(this.c.variant==="detailed"?"selected":"")+'>Detailed</option></select></label><label>Název<input id="n" value="'+(this.c.name||"")+'" placeholder="EcoVolter"></label></div>';this.querySelector("#d")?.addEventListener("change",e=>this.change("device",e.target.value));this.querySelector("#v")?.addEventListener("change",e=>this.change("variant",e.target.value));this.querySelector("#n")?.addEventListener("change",e=>this.change("name",e.target.value))}
 }
