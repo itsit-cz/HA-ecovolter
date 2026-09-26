@@ -4,7 +4,7 @@
 
 Custom Home Assistant integration for EcoVolter chargers using the local API.
 
-> **Status:** early v0.1 test build. Test it locally before relying on it for unattended charging.
+> **Current release:** v0.1.0. We recommend testing the integration in your installation before relying on it for unattended charging.
 
 ## Features
 
@@ -51,7 +51,11 @@ The hostname is re-resolved every 60 minutes. If a request fails because of a ne
 
 ## Dashboard
 
-See `examples/dashboard.yaml`.
+Three ready-to-use examples are included and use native Home Assistant cards only:
+
+- `examples/lovelace/compact.yaml` – compact everyday control
+- `examples/lovelace/detailed.yaml` – detailed view with phases and statistics
+- `examples/lovelace/dual-charger.yaml` – overview for two chargers
 
 Entity IDs depend on the name assigned by Home Assistant. Replace the example entity IDs with your actual IDs.
 
