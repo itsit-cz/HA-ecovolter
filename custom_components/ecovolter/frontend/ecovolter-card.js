@@ -1,5 +1,5 @@
 
-const VERSION="0.2.0-beta.1-dev3";
+const VERSION="0.2.0-beta.1-dev4";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -21,8 +21,11 @@ class EcoVolterCard extends HTMLElement{
   return s.state+(s.attributes.unit_of_measurement?" "+s.attributes.unit_of_measurement:"");
  }
  phases(){
-  const s=this.s("active_phases");
-  if(s&&!["unknown","unavailable"].includes(s.state)){const n=Number(s.state);if(Number.isFinite(n))return String(Math.round(n));return s.state}
+  // The charger's activePhases field is not populated reliably.
+  // For the card, the selected phase mode is authoritative: ON = 3 phases, OFF = 1 phase.
+  const mode=this.s("three_phase");
+  if(mode?.state==="on")return "3";
+  if(mode?.state==="off")return "1";
   const active=["current_l1","current_l2","current_l3"].filter(k=>{const x=Number(this.s(k)?.state);return Number.isFinite(x)&&x>0.05}).length;
   return active?String(active):"—";
  }
