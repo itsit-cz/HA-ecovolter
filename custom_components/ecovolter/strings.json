@@ -3,9 +3,9 @@
     "step": {
       "user": {
         "title": "Connect EcoVolter",
-        "description": "Enter the charger's IP address or hostname and Local API secret.",
+        "description": "Enter the charger's serial number, IP address or hostname and Local API secret.",
         "data": {
-          "host": "IP address or hostname",
+          "host": "Serial number, IP address or hostname",
           "secret": "API secret"
         }
       }
