@@ -47,6 +47,15 @@ class EcoVolterApi:
         self.last_resolved_at: float | None = None
 
     @property
+    def lookup_host(self) -> str:
+        """Return the hostname used for name resolution."""
+        if self.is_ip_address:
+            return self.host
+        if "." not in self.host:
+            return f"{self.host}.local"
+        return self.host
+
+    @property
     def is_ip_address(self) -> bool:
         try:
             ipaddress.ip_address(self.host)
@@ -71,7 +80,7 @@ class EcoVolterApi:
             loop = asyncio.get_running_loop()
             try:
                 infos = await loop.getaddrinfo(
-                    self.host,
+                    self.lookup_host,
                     self.port,
                     family=socket.AF_UNSPEC,
                     type=socket.SOCK_STREAM,
