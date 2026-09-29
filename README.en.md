@@ -4,7 +4,7 @@
 
 Custom Home Assistant integration for EcoVolter chargers using the local API.
 
-> **Current release:** v0.2.0. The integration communicates locally with EcoVolter and includes a dedicated Home Assistant card.
+> **Current release:** v0.2.1. The integration communicates locally with EcoVolter and includes a dedicated Home Assistant card.
 
 ## Features
 
@@ -21,7 +21,7 @@ Custom Home Assistant integration for EcoVolter chargers using the local API.
 - Enable/disable three-phase mode
 - Set charging current from 6 to 16 A
 - Czech and English Home Assistant UI
-- Dedicated EcoVolter card: Compact / Detailed, charger selection and CZ/EN
+- Dedicated EcoVolter card: Minimalistic / Compact / Detailed, charger selection and CZ/EN
 - Live telemetry refreshed every 1 second
 - Charger settings read separately and controlled through PATCH
 - Serialized API requests for more reliable communication
@@ -55,9 +55,9 @@ The hostname is re-resolved every 60 minutes. If a request fails because of a ne
 
 ## EcoVolter card
 
-The integration registers a dedicated **EcoVolter** card that can be added from the standard dashboard editor. The card editor lets you select a charger, choose **Compact** or **Detailed**, set a custom name, and select **Čeština / English**.
+The integration registers a dedicated **EcoVolter** card that can be added from the standard dashboard editor. The card editor lets you select a charger, choose **Minimalistic**, **Compact** or **Detailed**, set a custom name, and select **Čeština / English**.
 
-The card shows power, session energy, active phases and configured charging current. It can enable/disable charging, switch between single/three-phase mode and set charging current from 6–16 A. The Detailed variant also shows L1–L3 currents, L1–L3 voltages and lifetime statistics.
+The card shows power, session energy, active phases and configured charging current. It can enable/disable charging, switch between single/three-phase mode and set charging current from 6–16 A. The editor can use either a slider or compact **− / value / +** current control with manual input. The Minimalistic variant places essential data directly in the status line, while Detailed also shows L1–L3 currents, L1–L3 voltages and lifetime statistics.
 
 ## Dashboard examples
 
