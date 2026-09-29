@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.1 — 2026-09-29
+
+- Added the Minimalistic card layout for a compact charger overview and control.
+- Added selectable current control style for all card variants: slider or − / value / +.
+- Added direct manual current input from 6–16 A.
+- Improved plus/minus controls with immediate visual current updates.
+- Improved manual input focus handling during 1-second Home Assistant state refreshes.
+- Charging and three-phase controls now react optimistically without waiting for the next API state.
+- Charger settings continue to be verified by the regular 60-second settings refresh.
+- Improved layout and alignment of the compact current control.
+
+
 ## v0.2.0 — 2026-09-29
 
 - Added dedicated EcoVolter Home Assistant card with Compact and Detailed layouts.
