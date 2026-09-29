@@ -4,7 +4,7 @@
 
 Vlastní integrace EcoVolter pro Home Assistant využívající lokální API nabíječky.
 
-> **Aktuální vydání:** v0.1.0. Před použitím pro bezobslužné nabíjení doporučujeme integraci nejprve otestovat ve své instalaci.
+> **Aktuální vydání:** v0.2.0. Integrace komunikuje lokálně s EcoVolterem a obsahuje vlastní kartu pro Home Assistant.
 
 ## Funkce
 
@@ -21,6 +21,10 @@ Vlastní integrace EcoVolter pro Home Assistant využívající lokální API na
 - Přepínání jednofázového / třífázového režimu
 - Nastavení nabíjecího proudu 6–16 A
 - České a anglické rozhraní v Home Assistantu
+- Vlastní EcoVolter karta: Compact / Detailed, výběr nabíječky a CZ/EN
+- Živá telemetrie s obnovou stavu každou 1 s
+- Nastavení nabíječky načítané odděleně a ovládané přes PATCH
+- Serializace API požadavků pro stabilnější komunikaci
 
 Integrace používá lokální API EcoVolteru pro získávání stavu, diagnostických údajů a nastavení nabíječky.
 
@@ -51,9 +55,15 @@ Hostname se znovu překládá každých 60 minut. Pokud komunikace se zapamatova
 
 Chyba autentizace nevyvolává nový DNS překlad.
 
-## Dashboard
+## EcoVolter karta
 
-V repozitáři jsou tři hotové příklady postavené pouze na nativních kartách Home Assistantu:
+Integrace registruje vlastní kartu **EcoVolter**, kterou lze přidat přes běžný editor dashboardu. V editoru karty lze vybrat konkrétní nabíječku, variantu **Compact** nebo **Detailed**, vlastní název a jazyk **Čeština / English**.
+
+Karta zobrazuje výkon, energii relace, počet aktivních fází a nastavený nabíjecí proud. Umožňuje zapnout/vypnout nabíjení, přepnout 1/3 fáze a nastavit proud 6–16 A. Detailed varianta navíc zobrazuje proud L1–L3, napětí L1–L3 a dlouhodobé statistiky.
+
+## Dashboard příklady
+
+V repozitáři jsou také tři hotové příklady postavené pouze na nativních kartách Home Assistantu:
 
 - `examples/lovelace/compact.yaml` – kompaktní karta pro běžné ovládání
 - `examples/lovelace/detailed.yaml` – detailní karta včetně fází a statistik
