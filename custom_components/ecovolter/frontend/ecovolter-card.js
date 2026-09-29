@@ -1,12 +1,12 @@
 
-const VERSION="0.2.1-dev1";
+const VERSION="0.2.1-dev2";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","configured_current","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
 class EcoVolterCard extends HTMLElement{
  static getConfigElement(){return document.createElement("ecovolter-card-editor")}
  static getStubConfig(){return {variant:"compact",language:"cs"}}
- setConfig(c){this.c={variant:"compact",language:"cs",...c};this.sliderValue=null;this.draw()}
+ setConfig(c){this.c={variant:"compact",language:"cs",...c};this.sliderValue=null;this.switchValues={};this.draw()}
  set hass(h){
   this.h=h;
   // Do not rebuild the DOM while the user is dragging the range control.
@@ -27,13 +27,11 @@ class EcoVolterCard extends HTMLElement{
   return s.state+(s.attributes.unit_of_measurement?" "+s.attributes.unit_of_measurement:"");
  }
  async toggle(k,button){
-  const s=this.s(k); if(!s||!["on","off"].includes(s.state))return;
-  const turnOn=s.state!=="on";
-  if(button){
-   button.classList.toggle("on",turnOn);
-   const label=k==="charging_enabled"?(this.c.language==="en"?"Charging":"Nabíjení"):(this.c.language==="en"?"3 phases":"3 fáze");
-   button.textContent=(k==="charging_enabled"?"⚡ ":"〰 ")+label;
-  }
+  const s=this.s(k); if(!s)return;
+  const current=this.switchValues[k]??(s.state==="on");
+  const turnOn=!current;
+  this.switchValues[k]=turnOn;
+  if(button)button.classList.toggle("on",turnOn);
   const service=turnOn?"turn_on":"turn_off";
   await this.h.callService("switch",service,{entity_id:s.entity_id});
  }
@@ -42,7 +40,7 @@ class EcoVolterCard extends HTMLElement{
   if(!this.c)return;
   if(!this.c.device){const msg=this.c.language==="en"?"Select an EcoVolter charger in the card editor.":"Vyberte EcoVolter nabíječku v editoru karty.";this.innerHTML='<ha-card><div style="padding:18px">'+msg+'</div></ha-card>';return}
   if(!this.h||!this.e)return;
-  const on=this.s("charging_enabled")?.state==="on",three=this.s("three_phase")?.state==="on",connected=this.s("vehicle_connected")?.state==="on",charging=this.s("charging")?.state==="on",actualAmp=this.s("target_current")?.state||6,amp=this.sliderValue??actualAmp;
+  const on=this.switchValues.charging_enabled??(this.s("charging_enabled")?.state==="on"),three=this.switchValues.three_phase??(this.s("three_phase")?.state==="on"),connected=this.s("vehicle_connected")?.state==="on",charging=this.s("charging")?.state==="on",actualAmp=this.s("target_current")?.state||6,amp=this.sliderValue??actualAmp;
   const en=this.c.language==="en";
   const t=en?{connected:"🟢 Vehicle connected",disconnected:"⚪ Vehicle disconnected",charging:"charging",idle:"not charging",power:"Power",session:"Session",phases:"Phases",configured:"Charging current",charge:"Charging",phase:"3 phases",current:"Current",phaseCurrents:"Phase currents",phaseVoltages:"Phase voltages",stats:"Statistics",total:"Total",count:"Charging count",duration:"Duration"}:{connected:"🟢 Vozidlo připojeno",disconnected:"⚪ Vozidlo nepřipojeno",charging:"nabíjí",idle:"nenabíjí",power:"Výkon",session:"Relace",phases:"Fáze",configured:"Nabíjecí proud",charge:"Nabíjení",phase:"3 fáze",current:"Proud",phaseCurrents:"Proudy fází",phaseVoltages:"Napětí fází",stats:"Statistiky",total:"Celkem",count:"Počet nabíjení",duration:"Doba"};
   let detail="";
