@@ -17,7 +17,7 @@ from .coordinator import EcoVolterCoordinator
 
 type EcoVolterConfigEntry = ConfigEntry[EcoVolterCoordinator]
 
-CARD_URL = "/ecovolter/ecovolter-card.js?v=0.2.1-dev2"
+CARD_URL = "/ecovolter/ecovolter-card.js?v=0.2.1-dev3"
 CARD_ROUTE = "/ecovolter/ecovolter-card.js"
 CARD_PATH = Path(__file__).parent / "frontend" / "ecovolter-card.js"
 
