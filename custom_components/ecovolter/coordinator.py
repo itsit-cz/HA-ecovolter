@@ -33,6 +33,7 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._settings: dict[str, Any] = {}
         self._diagnostic: dict[str, Any] = {}
         self._last_diagnostic = 0.0
+        self._last_settings = 0.0
         self._write_lock = asyncio.Lock()
 
     async def _safe_read(
@@ -53,14 +54,18 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         status, status_ok = await self._safe_read(
             "status", self.api.async_get_status, self._status
         )
-        settings, settings_ok = await self._safe_read(
-            "settings", self.api.async_get_settings, self._settings
-        )
+        now = time.monotonic()
+        settings_ok = True
+        if now - self._last_settings >= 60 or not self._settings:
+            settings, settings_ok = await self._safe_read(
+                "settings", self.api.async_get_settings, self._settings
+            )
+            if settings_ok:
+                self._settings = settings
+                self._last_settings = now
 
         self._status = status
-        self._settings = settings
 
-        now = time.monotonic()
         if now - self._last_diagnostic >= _DIAGNOSTIC_INTERVAL or not self._diagnostic:
             diagnostic, diagnostic_ok = await self._safe_read(
                 "diagnostic", self.api.async_get_diagnostic, self._diagnostic
@@ -97,18 +102,8 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 }
             )
 
-            # Confirm the actual charger settings without invalidating all entities
-            # if the immediate confirmation request happens to fail.
-            confirmed, ok = await self._safe_read(
-                "settings confirmation", self.api.async_get_settings, self._settings
-            )
-            if ok:
-                self._settings = confirmed
-                current = self.data or {}
-                self.async_set_updated_data(
-                    {
-                        "status": current.get("status", self._status),
-                        "settings": self._settings,
-                        "diagnostic": current.get("diagnostic", self._diagnostic),
-                    }
-                )
+            # Do not immediately GET settings after a PATCH. Some EcoVolter
+            # firmware briefly returns the old value, which makes HA controls jump
+            # backwards. Keep the acknowledged local value and verify settings on
+            # the normal one-minute settings refresh.
+            self._last_settings = time.monotonic()
