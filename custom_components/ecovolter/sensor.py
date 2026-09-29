@@ -136,6 +136,15 @@ SENSORS = (
         section="status",
         value_fn=_active_phases,
     ),
+    EcoVolterSensorDescription(
+        key="configured_current",
+        translation_key="target_current",
+        section="settings",
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        device_class=SensorDeviceClass.CURRENT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: _pick(d, "targetCurrent"),
+    ),
 )
 
 
