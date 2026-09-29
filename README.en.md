@@ -4,7 +4,7 @@
 
 Custom Home Assistant integration for EcoVolter chargers using the local API.
 
-> **Current release:** v0.1.0. We recommend testing the integration in your installation before relying on it for unattended charging.
+> **Current release:** v0.2.0. The integration communicates locally with EcoVolter and includes a dedicated Home Assistant card.
 
 ## Features
 
@@ -21,6 +21,10 @@ Custom Home Assistant integration for EcoVolter chargers using the local API.
 - Enable/disable three-phase mode
 - Set charging current from 6 to 16 A
 - Czech and English Home Assistant UI
+- Dedicated EcoVolter card: Compact / Detailed, charger selection and CZ/EN
+- Live telemetry refreshed every 1 second
+- Charger settings read separately and controlled through PATCH
+- Serialized API requests for more reliable communication
 
 The integration uses the EcoVolter Local API endpoints for charger status, settings and diagnostics.
 
@@ -49,9 +53,15 @@ When a hostname is configured, the integration resolves it and caches the result
 
 The hostname is re-resolved every 60 minutes. If a request fails because of a network/connection error, the integration immediately resolves the hostname again and retries once. Authentication failures do not trigger DNS retries.
 
-## Dashboard
+## EcoVolter card
 
-Three ready-to-use examples are included and use native Home Assistant cards only:
+The integration registers a dedicated **EcoVolter** card that can be added from the standard dashboard editor. The card editor lets you select a charger, choose **Compact** or **Detailed**, set a custom name, and select **Čeština / English**.
+
+The card shows power, session energy, active phases and configured charging current. It can enable/disable charging, switch between single/three-phase mode and set charging current from 6–16 A. The Detailed variant also shows L1–L3 currents, L1–L3 voltages and lifetime statistics.
+
+## Dashboard examples
+
+Three ready-to-use native Home Assistant card examples are also included:
 
 - `examples/lovelace/compact.yaml` – compact everyday control
 - `examples/lovelace/detailed.yaml` – detailed view with phases and statistics
