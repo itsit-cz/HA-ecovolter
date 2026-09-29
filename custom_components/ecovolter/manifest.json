@@ -8,6 +8,6 @@
   "issue_tracker": "https://github.com/itsit-cz/HA-ecovolter/issues",
   "iot_class": "local_polling",
   "requirements": [],
-  "version": "0.2.0",
+  "version": "0.2.1",
   "integration_type": "device"
 }
