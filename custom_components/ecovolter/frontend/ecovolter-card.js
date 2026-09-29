@@ -1,5 +1,5 @@
 
-const VERSION="0.2.0-beta.1-dev19";
+const VERSION="0.2.0-beta.1-dev20";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","configured_current","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -15,7 +15,7 @@ class EcoVolterCard extends HTMLElement{
   if(this.sliderActive)return;
   this.resolve();
  }
- getCardSize(){return this.c?.variant==="detailed"?10:6}\n getGridOptions(){return {columns:12,rows:this.c?.variant==="detailed"?8:5,min_columns:6,min_rows:this.c?.variant==="detailed"?7:4}}
+ getCardSize(){return this.c?.variant==="detailed"?10:6}
  async resolve(){if(!this.h||!this.c?.device)return this.draw();if(this.did===this.c.device&&this.e)return this.draw();this.did=this.c.device;this.e={};for(const x of await entities(this.h,this.c.device)){const k=key(x.unique_id);if(k)this.e[k]=x.entity_id}this.draw()}
  s(k){return this.e?.[k]?this.h?.states?.[this.e[k]]:null}
  v(k){
