@@ -1,5 +1,5 @@
 
-const VERSION="0.2.0-beta.1-dev8";
+const VERSION="0.2.0-beta.1-dev9";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -46,23 +46,18 @@ class EcoVolterCardEditor extends HTMLElement{
   this.render();
  }
  fire(k,v){
-  if(this.c?.[k]===v)return;
+  if(v==null||this.c?.[k]===v)return;
   this.c={...this.c,[k]:v};
   this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:this.c},bubbles:true,composed:true}));
+  this.render();
  }
  render(){
   if(!this.c)return;
-  if(!this.shadowRoot)this.attachShadow({mode:"open"});
   const ds=this.d||[];
-  this.shadowRoot.innerHTML='<style>.w{display:grid;gap:14px}ha-select,ha-textfield{width:100%}</style><div class="w"><ha-select id="d" label="Nabíječka"><mwc-list-item value=""></mwc-list-item>'+ds.map(d=>'<mwc-list-item value="'+d.id+'">'+(d.name_by_user||d.name||d.id)+'</mwc-list-item>').join("")+'</ha-select><ha-select id="v" label="Varianta"><mwc-list-item value="compact">Compact</mwc-list-item><mwc-list-item value="detailed">Detailed</mwc-list-item></ha-select><ha-textfield id="n" label="Název" placeholder="EcoVolter"></ha-textfield></div>';
-  const d=this.shadowRoot.querySelector("#d"),v=this.shadowRoot.querySelector("#v"),n=this.shadowRoot.querySelector("#n");
-  d.value=this.c.device||"";v.value=this.c.variant||"compact";n.value=this.c.name||"";
-  const selectValue=e=>e.detail?.value ?? e.target?.value;
-  d.addEventListener("selected",e=>this.fire("device",selectValue(e)));
-  d.addEventListener("change",e=>this.fire("device",selectValue(e)));
-  v.addEventListener("selected",e=>this.fire("variant",selectValue(e)));
-  v.addEventListener("change",e=>this.fire("variant",selectValue(e)));
-  n.addEventListener("change",e=>this.fire("name",e.target.value));
+  this.innerHTML='<style>.w{display:grid;gap:14px}.field{display:grid;gap:6px}.label{font-size:12px;color:var(--secondary-text-color)}select,input{box-sizing:border-box;width:100%;height:48px;padding:0 12px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit}</style><div class="w"><label class="field"><span class="label">Nabíječka</span><select id="d"><option value="">Vyberte EcoVolter…</option>'+ds.map(d=>'<option value="'+d.id+'" '+(d.id===this.c.device?"selected":"")+'>'+(d.name_by_user||d.name||d.id)+'</option>').join("")+'</select></label><label class="field"><span class="label">Varianta</span><select id="v"><option value="compact" '+(this.c.variant==="compact"?"selected":"")+'>Compact</option><option value="detailed" '+(this.c.variant==="detailed"?"selected":"")+'>Detailed</option></select></label><label class="field"><span class="label">Název</span><input id="n" value="'+(this.c.name||"")+'" placeholder="EcoVolter"></label></div>';
+  this.querySelector("#d")?.addEventListener("change",e=>this.fire("device",e.currentTarget.value));
+  this.querySelector("#v")?.addEventListener("change",e=>this.fire("variant",e.currentTarget.value));
+  this.querySelector("#n")?.addEventListener("change",e=>this.fire("name",e.currentTarget.value));
  }
 }
 if(!customElements.get("ecovolter-card"))customElements.define("ecovolter-card",EcoVolterCard);
