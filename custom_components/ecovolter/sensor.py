@@ -22,6 +22,21 @@ def _pick(data: dict[str, Any], *keys: str) -> Any:
     return None
 
 
+def _active_phases(data: dict[str, Any]) -> int:
+    """Return the number of phases that are actually carrying charging current."""
+    active = 0
+    for phase in (1, 2, 3):
+        value = _phase_value(data, "current", phase)
+        try:
+            # EcoVolter reports a small idle current around 0.2 A, so use
+            # 1 A as the threshold for a phase that is genuinely charging.
+            if float(value) >= 1.0:
+                active += 1
+        except (TypeError, ValueError):
+            pass
+    return active
+
+
 def _phase_value(data: dict[str, Any], field: str, phase: int) -> Any:
     aliases = (
         f"{field}L{phase}",
@@ -118,7 +133,7 @@ SENSORS = (
         key="active_phases",
         translation_key="active_phases",
         section="status",
-        value_fn=lambda d: _pick(d, "activePhases", "phaseCount", "numberOfActivePhases"),
+        value_fn=_active_phases,
     ),
 )
 
