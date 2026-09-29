@@ -45,6 +45,7 @@ class EcoVolterApi:
         self.resolved_ip: str | None = None
         self.last_resolved: float | None = None
         self.last_resolved_at: float | None = None
+        self._request_lock = asyncio.Lock()
 
     @property
     def lookup_host(self) -> str:
@@ -107,7 +108,7 @@ class EcoVolterApi:
             hashlib.sha256,
         ).hexdigest()
 
-    async def _request(
+    async def _request_unlocked(
         self,
         method: str,
         endpoint: str,
@@ -157,10 +158,21 @@ class EcoVolterApi:
         except (ClientError, asyncio.TimeoutError, OSError) as err:
             if retry and not self.is_ip_address:
                 await self.async_resolve(force=True)
-                return await self._request(method, endpoint, payload, retry=False)
+                return await self._request_unlocked(method, endpoint, payload, retry=False)
             raise EcoVolterConnectionError(
                 "Unable to connect to EcoVolter"
             ) from err
+
+    async def _request(
+        self,
+        method: str,
+        endpoint: str,
+        payload: dict[str, Any] | None = None,
+        retry: bool = True,
+    ) -> dict[str, Any]:
+        """Serialize all HTTP traffic to chargers that dislike concurrent requests."""
+        async with self._request_lock:
+            return await self._request_unlocked(method, endpoint, payload, retry)
 
     async def async_get_status(self) -> dict[str, Any]:
         return await self._request("GET", "/charger/status")
