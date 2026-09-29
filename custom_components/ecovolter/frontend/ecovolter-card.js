@@ -1,5 +1,5 @@
 
-const VERSION="0.2.1-dev6";
+const VERSION="0.2.1-dev7";
 async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
 async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
 function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","configured_current","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
@@ -12,7 +12,7 @@ class EcoVolterCard extends HTMLElement{
   // Do not rebuild the DOM while the user is dragging the range control.
   // A coordinator update would otherwise recreate the slider and snap it
   // back to the last HA state before the finger/mouse reaches the target.
-  if(this.sliderActive)return;
+  if(this.sliderActive||this.currentInputActive)return;
   this.resolve();
  }
  getCardSize(){return this.c?.variant==="detailed"?10:this.c?.variant==="minimalistic"?4:6}
@@ -58,7 +58,11 @@ class EcoVolterCard extends HTMLElement{
   this.querySelector("#phase")?.addEventListener("click",e=>this.toggle("three_phase",e.currentTarget));
   this.querySelector("#ampMinus")?.addEventListener("click",()=>this.setCurrent(Number(this.sliderValue??actualAmp)-1));
   this.querySelector("#ampPlus")?.addEventListener("click",()=>this.setCurrent(Number(this.sliderValue??actualAmp)+1));
-  this.querySelector("#ampInput")?.addEventListener("change",e=>this.setCurrent(e.currentTarget.value));
+  const ampInput=this.querySelector("#ampInput");
+  ampInput?.addEventListener("focus",()=>{this.currentInputActive=true});
+  ampInput?.addEventListener("input",e=>{this.sliderValue=e.currentTarget.value});
+  ampInput?.addEventListener("change",async e=>{await this.setCurrent(e.currentTarget.value)});
+  ampInput?.addEventListener("blur",async e=>{this.currentInputActive=false;await this.setCurrent(e.currentTarget.value)});
   const slider=this.querySelector("#amp");
   const ampLabel=this.querySelector(".slider b");
   slider?.addEventListener("pointerdown",()=>{this.sliderActive=true});
