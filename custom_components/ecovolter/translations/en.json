@@ -176,6 +176,9 @@
       },
       "current_total_price": {
         "name": "Electricity price incl. distribution"
+      },
+      "target_current": {
+        "name": "Set current"
       }
     },
     "binary_sensor": {

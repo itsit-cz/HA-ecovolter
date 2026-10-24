@@ -176,6 +176,9 @@
       },
       "current_total_price": {
         "name": "Cena elektřiny vč. distribuce"
+      },
+      "target_current": {
+        "name": "Nastavený proud"
       }
     },
     "binary_sensor": {

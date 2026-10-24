@@ -12,7 +12,7 @@
  * - Optimistic values expire: if the charger does not confirm a change within
  *   a few seconds, the card shows the real state again instead of lying forever.
  */
-const VERSION = "0.4.0";
+const VERSION = "1.0.0";
 const DOMAIN = "ecovolter";
 const MIN_A = 6;
 const MAX_A = 16;
@@ -384,7 +384,7 @@ class EcoVolterCard extends HTMLElement {
 
     root.innerHTML = `<style>${STYLE}</style><ha-card>
       <div class="head"><div>
-        <div class="title">${esc(c.name || "EcoVolter")}</div>
+        <div class="title">${esc(this._title())}</div>
         <div class="status" id="status"></div>
       </div><ha-icon id="icon" icon="mdi:ev-station"></ha-icon></div>
       ${minimal ? "" : `<div class="grid">${tile("power", t.power)}${tile("session_energy", t.session)}${tile("active_phases", t.phases)}${tile("configured_current", t.configured)}</div>`}
@@ -401,6 +401,12 @@ class EcoVolterCard extends HTMLElement {
     this._bind();
     this._built = true;
     this._update();
+  }
+
+  // Card name > device name from the integration (incl. a rename by the user) > "EcoVolter"
+  _title() {
+    const d = this._hass?.devices?.[this._config.device];
+    return this._config.name || d?.name_by_user || d?.name || "EcoVolter";
   }
 
   _carsHtml() {
@@ -710,6 +716,7 @@ class EcoVolterCard extends HTMLElement {
     const set = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
 
     root.querySelectorAll("[data-v]").forEach((el) => set(el, this._fmt(el.dataset.v)));
+    set(root.querySelector(".title"), this._title());
 
     const conn = this._s("vehicle_connected");
     const chg = this._s("charging");
@@ -881,7 +888,7 @@ class EcoVolterCardEditor extends HTMLElement {
         ${opt("cs", "Čeština", c.language !== "en")}
         ${opt("en", "English", c.language === "en")}
       </select></label>
-      <label class="field"><span class="label">Název / Name</span><input id="n" value="${esc(c.name || "")}" placeholder="EcoVolter"></label>
+      <label class="field"><span class="label">Název / Name (prázdné = název zařízení)</span><input id="n" value="${esc(c.name || "")}" placeholder="${esc(ds.find((d) => d.id === c.device)?.name || "EcoVolter")}"></label>
     </div>`;
     const $ = (id) => this.shadowRoot.getElementById(id);
     $("d").addEventListener("change", (e) => this._fire("device", e.target.value));
