@@ -13,7 +13,12 @@ from typing import Any
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 
-from .const import DEFAULT_PORT, DNS_REFRESH_SECONDS, REQUEST_TIMEOUT_SECONDS
+from .const import (
+    CONNECT_TIMEOUT_SECONDS,
+    DEFAULT_PORT,
+    DNS_REFRESH_SECONDS,
+    REQUEST_TIMEOUT_SECONDS,
+)
 
 
 class EcoVolterError(Exception):
@@ -131,6 +136,10 @@ class EcoVolterApi:
             "Authorization": f"HmacSHA256 {self._signature(signed_url, timestamp, body)}",
             "X-Timestamp": timestamp,
             "Accept": "application/json",
+            # The charger's embedded web server does not cope well with reused
+            # keep-alive sockets: a half-closed pooled connection makes the next
+            # request hang until the timeout. Use a fresh connection every time.
+            "Connection": "close",
         }
         if payload is not None:
             headers["Content-Type"] = "application/json"
@@ -141,27 +150,51 @@ class EcoVolterApi:
                 signed_url,
                 data=body if payload is not None else None,
                 headers=headers,
-                timeout=ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+                timeout=ClientTimeout(
+                    total=REQUEST_TIMEOUT_SECONDS,
+                    connect=CONNECT_TIMEOUT_SECONDS,
+                ),
             ) as response:
                 if response.status in (401, 403):
                     raise EcoVolterAuthError("Authentication failed")
                 if response.status >= 400:
                     response_text = await response.text()
                     raise EcoVolterError(
-                        f"HTTP {response.status}: {response_text}"
+                        f"HTTP {response.status}: {response_text[:200]}"
                     )
                 if response.status == 204:
                     return {}
-                return await response.json(content_type=None)
-        except EcoVolterAuthError:
+                text = await response.text()
+        except EcoVolterError:
             raise
         except (ClientError, asyncio.TimeoutError, OSError) as err:
+            # Only retry when the hostname now resolves to a different address.
+            # Retrying the same IP after a timeout just doubles the time the
+            # request lock is held and makes the whole integration feel frozen.
             if retry and not self.is_ip_address:
-                await self.async_resolve(force=True)
-                return await self._request_unlocked(method, endpoint, payload, retry=False)
+                old_ip = self.resolved_ip
+                try:
+                    new_ip = await self.async_resolve(force=True)
+                except EcoVolterConnectionError:
+                    new_ip = old_ip
+                if new_ip != old_ip:
+                    return await self._request_unlocked(
+                        method, endpoint, payload, retry=False
+                    )
             raise EcoVolterConnectionError(
-                "Unable to connect to EcoVolter"
+                f"Unable to connect to EcoVolter: {err!r}"
             ) from err
+
+        if not text.strip():
+            return {}
+        try:
+            data = json.loads(text)
+        except ValueError as err:
+            # Truncated / garbled responses happen occasionally on Wi-Fi.
+            raise EcoVolterError(f"Invalid JSON from EcoVolter: {text[:100]!r}") from err
+        if not isinstance(data, dict):
+            raise EcoVolterError(f"Unexpected response from EcoVolter: {text[:100]!r}")
+        return data
 
     async def _request(
         self,

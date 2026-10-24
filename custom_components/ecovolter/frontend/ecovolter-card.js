@@ -1,117 +1,545 @@
+/* EcoVolter Lovelace card
+ *
+ * Design notes (why it is built this way):
+ * - The DOM is built once per config and afterwards only updated in place.
+ *   Home Assistant pushes `hass` many times per second; rebuilding innerHTML on
+ *   every push destroyed buttons between touchstart and click, so taps on
+ *   mobile were lost and the slider snapped back.
+ * - Shadow DOM keeps the card's CSS from leaking into the rest of the dashboard.
+ * - Entities are found via `hass.entities` (available to every user). The old
+ *   `config/entity_registry/list` websocket call is admin-only, so the card was
+ *   blank for non-admin users (typically family phones).
+ * - Optimistic values expire: if the charger does not confirm a change within
+ *   a few seconds, the card shows the real state again instead of lying forever.
+ */
+const VERSION = "0.3.0";
+const DOMAIN = "ecovolter";
+const MIN_A = 6;
+const MAX_A = 16;
+const PENDING_MS = 15000;
+const STEP_DEBOUNCE_MS = 700;
 
-const VERSION="0.2.1";
-async function devices(h){return (await h.callWS({type:"config/device_registry/list"})).filter(d=>(d.identifiers||[]).some(i=>Array.isArray(i)&&i[0]==="ecovolter"))}
-async function entities(h,id){return (await h.callWS({type:"config/entity_registry/list"})).filter(e=>e.device_id===id&&!e.disabled_by)}
-function key(u){for(const k of ["vehicle_connected","charging","power","session_energy","total_energy","charging_count","total_charging_time","current_l1","current_l2","current_l3","voltage_l1","voltage_l2","voltage_l3","active_phases","configured_current","charging_enabled","three_phase","target_current"])if((u||"").endsWith("_"+k))return k}
-class EcoVolterCard extends HTMLElement{
- static getConfigElement(){return document.createElement("ecovolter-card-editor")}
- static getStubConfig(){return {variant:"compact",language:"cs",current_control:"slider"}}
- setConfig(c){this.c={variant:"compact",language:"cs",current_control:"slider",...c};this.sliderValue=null;this.switchValues={};this.draw()}
- set hass(h){
-  this.h=h;
-  // Do not rebuild the DOM while the user is dragging the range control.
-  // A coordinator update would otherwise recreate the slider and snap it
-  // back to the last HA state before the finger/mouse reaches the target.
-  if(this.sliderActive||this.currentInputActive)return;
-  this.resolve();
- }
- getCardSize(){return this.c?.variant==="detailed"?10:this.c?.variant==="minimalistic"?4:6}
- async resolve(){if(!this.h||!this.c?.device)return this.draw();if(this.did===this.c.device&&this.e)return this.draw();this.did=this.c.device;this.e={};for(const x of await entities(this.h,this.c.device)){const k=key(x.unique_id);if(k)this.e[k]=x.entity_id}this.draw()}
- s(k){return this.e?.[k]?this.h?.states?.[this.e[k]]:null}
- v(k){
-  const s=this.s(k); if(!s||["unknown","unavailable"].includes(s.state))return "—";
-  const n=Number(s.state);
-  if(k==="total_charging_time"&&Number.isFinite(n)){const m=Math.round(n/60),h=Math.floor(m/60);return h+" h "+(m%60)+" min"}
-  if((k==="charging_count"||k==="active_phases")&&Number.isFinite(n))return String(Math.round(n));
-  if(Number.isFinite(n))return n.toFixed(2)+(s.attributes.unit_of_measurement?" "+s.attributes.unit_of_measurement:"");
-  return s.state+(s.attributes.unit_of_measurement?" "+s.attributes.unit_of_measurement:"");
- }
- async toggle(k,button){
-  const s=this.s(k); if(!s)return;
-  const current=this.switchValues[k]??(s.state==="on");
-  const turnOn=!current;
-  this.switchValues[k]=turnOn;
-  if(button)button.classList.toggle("on",turnOn);
-  const service=turnOn?"turn_on":"turn_off";
-  await this.h.callService("switch",service,{entity_id:s.entity_id});
- }
- async setCurrent(value){
-  const s=this.s("target_current"); if(!s)return;
-  const v=Math.max(6,Math.min(16,Math.round(Number(value))));
-  this.sliderValue=String(v);
-  const input=this.querySelector("#ampInput");
-  if(input)input.value=String(v);
-  const label=this.querySelector(".slider b");
-  if(label)label.textContent=v+" A";
-  await this.h.callService("number","set_value",{entity_id:s.entity_id,value:v});
- }
- current(e){return this.setCurrent(e.target.value)}
-  draw(){
-  if(!this.c)return;
-  if(!this.c.device){const msg=this.c.language==="en"?"Select an EcoVolter charger in the card editor.":"Vyberte EcoVolter nabíječku v editoru karty.";this.innerHTML='<ha-card><div style="padding:18px">'+msg+'</div></ha-card>';return}
-  if(!this.h||!this.e)return;
-  const on=this.switchValues.charging_enabled??(this.s("charging_enabled")?.state==="on"),three=this.switchValues.three_phase??(this.s("three_phase")?.state==="on"),connected=this.s("vehicle_connected")?.state==="on",charging=this.s("charging")?.state==="on",actualAmp=this.s("target_current")?.state||6,amp=this.sliderValue??actualAmp;
-  const en=this.c.language==="en";
-  const t=en?{connected:"🟢 Vehicle connected",disconnected:"⚪ Vehicle disconnected",charging:"charging",idle:"not charging",power:"Power",session:"Session",phases:"Phases",configured:"Charging current",charge:"Charging",phase:"3 phases",current:"Current",phaseCurrents:"Phase currents",phaseVoltages:"Phase voltages",stats:"Statistics",total:"Total",count:"Charging count",duration:"Duration"}:{connected:"🟢 Vozidlo připojeno",disconnected:"⚪ Vozidlo nepřipojeno",charging:"nabíjí",idle:"nenabíjí",power:"Výkon",session:"Relace",phases:"Fáze",configured:"Nabíjecí proud",charge:"Nabíjení",phase:"3 fáze",current:"Proud",phaseCurrents:"Proudy fází",phaseVoltages:"Napětí fází",stats:"Statistiky",total:"Celkem",count:"Počet nabíjení",duration:"Doba"};
-  const minimal=this.c.variant==="minimalistic";
-  let detail="";
-  if(this.c.variant==="detailed")detail='<div class="section"><b>'+t.phaseCurrents+'</b></div><div class="phase-grid">'+["current_l1","current_l2","current_l3"].map((k,n)=>'<div><small>L'+(n+1)+'</small><strong>'+this.v(k)+'</strong></div>').join("")+'</div><div class="section"><b>'+t.phaseVoltages+'</b></div><div class="phase-grid">'+["voltage_l1","voltage_l2","voltage_l3"].map((k,n)=>'<div><small>L'+(n+1)+'</small><strong>'+this.v(k)+'</strong></div>').join("")+'</div><div class="section"><b>'+t.stats+'</b></div><div class="phase-grid"><div><small>'+t.total+'</small><strong>'+this.v("total_energy")+'</strong></div><div><small>'+t.count+'</small><strong>'+this.v("charging_count")+'</strong></div><div><small>'+t.duration+'</small><strong>'+this.v("total_charging_time")+'</strong></div></div>';
-  this.innerHTML='<style>:host{display:block;box-sizing:border-box;min-width:0}ha-card{display:block;box-sizing:border-box;width:100%;height:auto;overflow:hidden;padding:'+(minimal?'12px':'16px')+'}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.title{font-size:20px;font-weight:600}.status{font-size:13px;opacity:.7}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.grid>div,.phase-grid>div{min-width:0;padding:10px;text-align:center;border-radius:12px;background:var(--secondary-background-color)}.phase-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}small{display:block;opacity:.65;margin-bottom:4px}strong{font-size:16px}.switches{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}button{border:0;border-radius:12px;padding:12px;background:var(--secondary-background-color);color:var(--primary-text-color)}button.on{background:var(--primary-color);color:var(--text-primary-color)}.slider{display:flex;gap:12px;align-items:center;margin-top:12px}.slider input[type="range"]{flex:1}.slider:has(.amp-input){display:grid;grid-template-columns:auto 1fr 2fr 1fr;align-items:center}.amp-btn{width:100%;padding:8px;font-size:20px;line-height:1}.amp-value{display:flex;align-items:center;width:100%;height:38px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);overflow:hidden}.amp-input{min-width:0;flex:1;width:100%;height:100%;text-align:center;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;padding:0 0 0 24px}.amp-value span{width:24px;margin-left:-24px;padding:0;text-align:left;font-weight:600;pointer-events:none}.section{margin:16px 0 8px}@media(max-width:600px){ha-card{padding:14px}.title{font-size:19px}.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.grid>div{padding:9px 5px}small{font-size:11px}strong{font-size:15px}.phase-grid{gap:6px}.switches{gap:6px}.switches button{padding:11px 6px;font-size:13px}.slider{gap:8px}.section{margin-top:14px}}</style><ha-card><div class="head"><div><div class="title">'+(this.c.name||"EcoVolter")+'</div><div class="status">'+(connected?t.connected:t.disconnected)+' · '+(charging?t.charging:t.idle)+(minimal?' · '+t.phases+': '+this.v("active_phases")+' · '+t.power+': '+this.v("power")+' · '+t.session+': '+this.v("session_energy"):'')+'</div></div><ha-icon icon="mdi:ev-station"></ha-icon></div>'+(minimal?'':'<div class="grid"><div><small>'+t.power+'</small><strong>'+this.v("power")+'</strong></div><div><small>'+t.session+'</small><strong>'+this.v("session_energy")+'</strong></div><div><small>'+t.phases+'</small><strong>'+this.v("active_phases")+'</strong></div><div><small>'+t.configured+'</small><strong>'+this.v("configured_current")+'</strong></div></div>')+'<div class="switches"><button id="charge" class="'+(on?"on":"")+'">⚡ '+t.charge+'</button><button id="phase" class="'+(three?"on":"")+'">〰 '+t.phase+'</button></div><div class="slider"><span>'+t.current+'</span>'+(this.c.current_control==="buttons"?'<button id="ampMinus" class="amp-btn">−</button><div class="amp-value"><input id="ampInput" class="amp-input" type="number" min="6" max="16" step="1" value="'+amp+'"><span>A</span></div><button id="ampPlus" class="amp-btn">+</button>':'<input id="amp" type="range" min="6" max="16" step="1" value="'+amp+'"><b>'+amp+' A</b>')+'</div>'+detail+'</ha-card>';
-  this.querySelector("#charge")?.addEventListener("click",e=>this.toggle("charging_enabled",e.currentTarget));
-  this.querySelector("#phase")?.addEventListener("click",e=>this.toggle("three_phase",e.currentTarget));
-  this.querySelector("#ampMinus")?.addEventListener("click",()=>this.setCurrent(Number(this.sliderValue??actualAmp)-1));
-  this.querySelector("#ampPlus")?.addEventListener("click",()=>this.setCurrent(Number(this.sliderValue??actualAmp)+1));
-  const ampInput=this.querySelector("#ampInput");
-  ampInput?.addEventListener("focus",()=>{this.currentInputActive=true});
-  ampInput?.addEventListener("input",e=>{this.sliderValue=e.currentTarget.value});
-  ampInput?.addEventListener("keydown",async e=>{if(e.key==="Enter"){e.preventDefault();const value=e.currentTarget.value;this.currentInputActive=false;await this.setCurrent(value);e.currentTarget.blur()}});
-  ampInput?.addEventListener("change",async e=>{const value=e.currentTarget.value;this.currentInputActive=false;await this.setCurrent(value)});
-  ampInput?.addEventListener("blur",async e=>{this.currentInputActive=false;const v=Math.max(6,Math.min(16,Math.round(Number(e.currentTarget.value))));if(String(v)!==String(this.sliderValue))await this.setCurrent(v)});
-  const slider=this.querySelector("#amp");
-  const ampLabel=this.querySelector(".slider b");
-  slider?.addEventListener("pointerdown",()=>{this.sliderActive=true});
-  slider?.addEventListener("touchstart",()=>{this.sliderActive=true},{passive:true});
-  slider?.addEventListener("input",e=>{this.sliderActive=true;this.sliderValue=e.currentTarget.value;if(ampLabel)ampLabel.textContent=e.currentTarget.value+" A"});
-  slider?.addEventListener("change",async e=>{
-    const value=e.currentTarget.value;
-    this.sliderValue=value;
-    this.sliderActive=false;
-    if(ampLabel)ampLabel.textContent=value+" A";
-    await this.current(e);
-    // Keep the requested value visible. The integration owns the value after a
-    // successful PATCH and its periodic settings refresh will verify it later.
+// translation_key (+ domain) -> card key
+const KEY_MAP = {
+  "binary_sensor:vehicle_connected": "vehicle_connected",
+  "binary_sensor:charging": "charging",
+  "sensor:power": "power",
+  "sensor:session_energy": "session_energy",
+  "sensor:total_energy": "total_energy",
+  "sensor:charging_count": "charging_count",
+  "sensor:total_charging_time": "total_charging_time",
+  "sensor:current_l1": "current_l1",
+  "sensor:current_l2": "current_l2",
+  "sensor:current_l3": "current_l3",
+  "sensor:voltage_l1": "voltage_l1",
+  "sensor:voltage_l2": "voltage_l2",
+  "sensor:voltage_l3": "voltage_l3",
+  "sensor:active_phases": "active_phases",
+  "sensor:target_current": "configured_current",
+  "switch:charging_enabled": "charging_enabled",
+  "switch:three_phase": "three_phase",
+  "number:target_current": "target_current",
+};
+// unique_id suffixes, used only for the admin websocket fallback
+const UID_KEYS = Object.values(KEY_MAP).sort((a, b) => b.length - a.length);
+
+const T = {
+  cs: {
+    connected: "Vozidlo připojeno", disconnected: "Vozidlo nepřipojeno",
+    charging: "nabíjí", idle: "nenabíjí", unavailable: "Nabíječka nedostupná",
+    power: "Výkon", session: "Relace", phases: "Fáze", configured: "Nastavený proud",
+    charge: "Nabíjení", phase: "3 fáze", current: "Proud",
+    phaseCurrents: "Proudy fází", phaseVoltages: "Napětí fází", stats: "Statistiky",
+    total: "Celkem", count: "Počet nabíjení", duration: "Doba",
+    selectDevice: "Vyberte EcoVolter nabíječku v editoru karty.",
+    notFound: "Entity nabíječky nebyly nalezeny.",
+    failed: "EcoVolter: příkaz se nezdařil",
+  },
+  en: {
+    connected: "Vehicle connected", disconnected: "Vehicle disconnected",
+    charging: "charging", idle: "not charging", unavailable: "Charger unavailable",
+    power: "Power", session: "Session", phases: "Phases", configured: "Set current",
+    charge: "Charging", phase: "3 phases", current: "Current",
+    phaseCurrents: "Phase currents", phaseVoltages: "Phase voltages", stats: "Statistics",
+    total: "Total", count: "Charging count", duration: "Duration",
+    selectDevice: "Select an EcoVolter charger in the card editor.",
+    notFound: "Charger entities were not found.",
+    failed: "EcoVolter: command failed",
+  },
+};
+
+const esc = (s) =>
+  String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const clampA = (v) => Math.max(MIN_A, Math.min(MAX_A, Math.round(Number(v))));
+const isBad = (s) => !s || s.state === "unknown" || s.state === "unavailable";
+// Current setpoint of a number entity, or null when it is not a usable number.
+const ampOf = (s) => {
+  if (isBad(s)) return null;
+  const v = clampA(s.state);
+  return Number.isFinite(v) ? v : null;
+};
+
+function ecovolterDevices(hass) {
+  const ids = new Set();
+  for (const e of Object.values(hass?.entities || {})) {
+    if (e.platform === DOMAIN && e.device_id) ids.add(e.device_id);
+  }
+  return [...ids].map((id) => {
+    const d = hass.devices?.[id];
+    return { id, name: d?.name_by_user || d?.name || id };
   });
-  slider?.addEventListener("pointercancel",()=>{this.sliderActive=false;this.resolve()})
- }}
-class EcoVolterCardEditor extends HTMLElement{
- setConfig(c){this.c={variant:"compact",language:"cs",current_control:"slider",...c};this.render()}
- set hass(h){this.h=h;if(!this.d&&!this.loading)this.load()}
- async load(){
-  if(!this.h||this.loading)return;
-  this.loading=true;
-  try{this.d=await devices(this.h)}
-  finally{this.loading=false}
-  this.render();
- }
- fire(k,v){
-  if(v==null||this.c?.[k]===v)return;
-  this.c={...this.c,[k]:v};
-  this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:this.c},bubbles:true,composed:true}));
-  this.render();
- }
- render(){
-  if(!this.c)return;
-  const ds=this.d||[];
-  this.innerHTML='<style>.w{display:grid;gap:14px}.field{display:grid;gap:6px}.label{font-size:12px;color:var(--secondary-text-color)}select,input{box-sizing:border-box;width:100%;height:48px;padding:0 12px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit}</style><div class="w"><label class="field"><span class="label">Nabíječka</span><select id="d"><option value="">Vyberte EcoVolter…</option>'+ds.map(d=>'<option value="'+d.id+'" '+(d.id===this.c.device?"selected":"")+'>'+(d.name_by_user||d.name||d.id)+'</option>').join("")+'</select></label><label class="field"><span class="label">Varianta</span><select id="v"><option value="minimalistic" '+(this.c.variant==="minimalistic"?"selected":"")+'>Minimalistic</option><option value="compact" '+(this.c.variant==="compact"?"selected":"")+'>Compact</option><option value="detailed" '+(this.c.variant==="detailed"?"selected":"")+'>Detailed</option></select></label><label class="field"><span class="label">Ovládání proudu / Current control</span><select id="c"><option value="slider" '+(this.c.current_control!=="buttons"?"selected":"")+'>Slider</option><option value="buttons" '+(this.c.current_control==="buttons"?"selected":"")+'>− / hodnota / +</option></select></label><label class="field"><span class="label">Jazyk / Language</span><select id="l"><option value="cs" '+(this.c.language!=="en"?"selected":"")+'>Čeština</option><option value="en" '+(this.c.language==="en"?"selected":"")+'>English</option></select></label><label class="field"><span class="label">Název</span><input id="n" value="'+(this.c.name||"")+'" placeholder="EcoVolter"></label></div>';
-  this.querySelector("#d")?.addEventListener("change",e=>this.fire("device",e.currentTarget.value));
-  this.querySelector("#v")?.addEventListener("change",e=>this.fire("variant",e.currentTarget.value));
-  this.querySelector("#c")?.addEventListener("change",e=>this.fire("current_control",e.currentTarget.value));
-  this.querySelector("#l")?.addEventListener("change",e=>this.fire("language",e.currentTarget.value));
-  this.querySelector("#n")?.addEventListener("change",e=>this.fire("name",e.currentTarget.value));
- }
 }
-if(!customElements.get("ecovolter-card"))customElements.define("ecovolter-card",EcoVolterCard);
-if(!customElements.get("ecovolter-card-editor"))customElements.define("ecovolter-card-editor",EcoVolterCardEditor);
-window.customCards=window.customCards||[];
-if(!window.customCards.some(c=>c.type==="ecovolter-card"))window.customCards.push({type:"ecovolter-card",name:"EcoVolter",description:"EcoVolter charger card with device selection",preview:true,documentationURL:"https://github.com/itsit-cz/HA-ecovolter"});
-console.info("EcoVolter Card "+VERSION);
+
+const STYLE = `
+:host{display:block}
+ha-card{padding:16px;overflow:hidden;-webkit-tap-highlight-color:transparent}
+:host([variant=minimalistic]) ha-card{padding:12px}
+.head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px}
+.title{font-size:20px;font-weight:600;line-height:1.2}
+.status{font-size:13px;opacity:.7;margin-top:2px}
+.status.bad{color:var(--error-color);opacity:1}
+ha-icon{color:var(--state-icon-color)}
+ha-icon.active{color:var(--primary-color)}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.phase-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.tile{min-width:0;padding:10px 6px;text-align:center;border-radius:12px;background:var(--secondary-background-color)}
+small{display:block;opacity:.65;margin-bottom:4px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+strong{font-size:16px;white-space:nowrap}
+.switches{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+button{font:inherit;border:0;border-radius:12px;padding:12px;cursor:pointer;
+  background:var(--secondary-background-color);color:var(--primary-text-color);
+  touch-action:manipulation;user-select:none;-webkit-user-select:none;transition:background .15s}
+button.on{background:var(--primary-color);color:var(--text-primary-color)}
+button.pending{opacity:.7}
+button:disabled,input:disabled{opacity:.4;cursor:default}
+.ctl{display:flex;gap:12px;align-items:center;margin-top:12px;min-height:44px}
+.ctl input[type=range]{flex:1;min-width:0;height:32px;margin:0;touch-action:pan-y;accent-color:var(--primary-color)}
+.ctl .val{min-width:44px;text-align:right;font-weight:600}
+.ctl.buttons{display:grid;grid-template-columns:auto 1fr 1.6fr 1fr;gap:8px}
+.amp-btn{padding:8px;font-size:22px;line-height:1}
+.amp-value{display:flex;align-items:center;justify-content:center;height:40px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color)}
+.amp-input{width:3ch;min-width:0;text-align:right;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;padding:0;-moz-appearance:textfield}
+.amp-input::-webkit-outer-spin-button,.amp-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.amp-value span{font-weight:600;margin-left:3px}
+.section{margin:16px 0 8px;font-weight:600}
+.msg{padding:18px}
+@media(max-width:600px){
+  ha-card{padding:14px}.title{font-size:19px}
+  .grid,.phase-grid,.switches{gap:6px}
+  small{font-size:11px}strong{font-size:15px}
+  .switches button{padding:12px 6px;font-size:14px}
+}
+@media(max-width:380px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+`;
+
+class EcoVolterCard extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._ents = null; // card key -> entity_id
+    this._pending = {}; // card key -> {value, until}
+    this._dragging = false;
+    this._editing = false;
+    this._stepTimer = null;
+  }
+
+  static getConfigElement() { return document.createElement("ecovolter-card-editor"); }
+
+  static getStubConfig(hass) {
+    const d = ecovolterDevices(hass)[0];
+    return { variant: "compact", language: "cs", current_control: "slider", ...(d ? { device: d.id } : {}) };
+  }
+
+  setConfig(config) {
+    if (!config) throw new Error("Invalid configuration");
+    const old = this._config;
+    this._config = { variant: "compact", language: "cs", current_control: "slider", ...config };
+    if (!old || old.device !== this._config.device) this._ents = null;
+    this._built = false;
+    this._render();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (!this._ents && this._config?.device) this._resolve();
+    if (!this._built) this._render();
+    else this._update();
+  }
+  get hass() { return this._hass; }
+
+  getCardSize() {
+    const v = this._config?.variant;
+    return v === "detailed" ? 10 : v === "minimalistic" ? 4 : 6;
+  }
+
+  get _t() { return T[this._config?.language === "en" ? "en" : "cs"]; }
+
+  /* ---------- entity lookup ---------- */
+
+  _resolve() {
+    const hass = this._hass, device = this._config.device;
+    const ents = {};
+    for (const e of Object.values(hass.entities || {})) {
+      if (e.device_id !== device || e.platform !== DOMAIN) continue;
+      const key = KEY_MAP[e.entity_id.split(".")[0] + ":" + e.translation_key];
+      if (key) ents[key] = e.entity_id;
+    }
+    if (Object.keys(ents).length) {
+      this._ents = ents;
+      this._built = false;
+      return;
+    }
+    // Fallback for older HA versions without translation_key in hass.entities.
+    if (this._resolving) return;
+    if (!hass.user?.is_admin) { this._ents = {}; this._built = false; return; }
+    this._resolving = true;
+    hass
+      .callWS({ type: "config/entity_registry/list" })
+      .then((list) => {
+        const found = {};
+        for (const e of list) {
+          if (e.device_id !== device || e.disabled_by) continue;
+          const key = UID_KEYS.find((k) => (e.unique_id || "").endsWith("_" + k));
+          if (key && !found[key]) found[key] = e.entity_id;
+        }
+        this._ents = found;
+        this._built = false;
+        this._render();
+      })
+      .catch((err) => console.warn("EcoVolter card: entity lookup failed", err))
+      .finally(() => { this._resolving = false; });
+  }
+
+  _s(key) {
+    const id = this._ents?.[key];
+    return id ? this._hass?.states?.[id] : undefined;
+  }
+
+  /* ---------- pending (optimistic) values ---------- */
+
+  _setPending(key, value) { this._pending[key] = { value, until: Date.now() + PENDING_MS }; }
+
+  _effective(key, actual) {
+    const p = this._pending[key];
+    if (!p) return actual;
+    if (Date.now() > p.until || String(actual) === String(p.value)) {
+      delete this._pending[key];
+      return actual;
+    }
+    return p.value;
+  }
+
+  /* ---------- formatting ---------- */
+
+  _fmt(key) {
+    const s = this._s(key);
+    if (isBad(s)) return "—";
+    const unit = s.attributes.unit_of_measurement ? " " + s.attributes.unit_of_measurement : "";
+    const n = Number(s.state);
+    if (!Number.isFinite(n)) return s.state + unit;
+    if (key === "total_charging_time") {
+      const m = Math.round(n / 60);
+      return Math.floor(m / 60) + " h " + (m % 60) + " min";
+    }
+    if (key === "charging_count" || key === "active_phases") return String(Math.round(n));
+    if (key === "configured_current" || key === "target_current") return Math.round(n) + unit;
+    if (key.startsWith("voltage")) return n.toFixed(0) + unit;
+    return n.toFixed(2) + unit;
+  }
+
+  /* ---------- build DOM once ---------- */
+
+  _render() {
+    const root = this.shadowRoot;
+    const c = this._config;
+    if (!c) return;
+    const t = this._t;
+    if (!c.device) {
+      root.innerHTML = `<style>${STYLE}</style><ha-card><div class="msg">${esc(t.selectDevice)}</div></ha-card>`;
+      return;
+    }
+    if (!this._hass || !this._ents) return;
+    if (!Object.keys(this._ents).length) {
+      root.innerHTML = `<style>${STYLE}</style><ha-card><div class="msg">${esc(t.notFound)}</div></ha-card>`;
+      return;
+    }
+
+    this.setAttribute("variant", c.variant);
+    const minimal = c.variant === "minimalistic";
+    const tile = (key, label) => `<div class="tile"><small>${esc(label)}</small><strong data-v="${key}">—</strong></div>`;
+
+    let detail = "";
+    if (c.variant === "detailed") {
+      detail =
+        `<div class="section">${esc(t.phaseCurrents)}</div><div class="phase-grid">` +
+        [1, 2, 3].map((n) => tile("current_l" + n, "L" + n)).join("") +
+        `</div><div class="section">${esc(t.phaseVoltages)}</div><div class="phase-grid">` +
+        [1, 2, 3].map((n) => tile("voltage_l" + n, "L" + n)).join("") +
+        `</div><div class="section">${esc(t.stats)}</div><div class="phase-grid">` +
+        tile("total_energy", t.total) + tile("charging_count", t.count) + tile("total_charging_time", t.duration) +
+        `</div>`;
+    }
+
+    const control =
+      c.current_control === "buttons"
+        ? `<div class="ctl buttons"><span>${esc(t.current)}</span>
+             <button class="amp-btn" id="minus" aria-label="-1 A">−</button>
+             <label class="amp-value"><input id="ampInput" class="amp-input" type="number" inputmode="numeric" min="${MIN_A}" max="${MAX_A}" step="1"><span>A</span></label>
+             <button class="amp-btn" id="plus" aria-label="+1 A">+</button></div>`
+        : `<div class="ctl"><span>${esc(t.current)}</span>
+             <input id="slider" type="range" min="${MIN_A}" max="${MAX_A}" step="1">
+             <span class="val" id="sliderVal">— A</span></div>`;
+
+    root.innerHTML = `<style>${STYLE}</style><ha-card>
+      <div class="head"><div>
+        <div class="title">${esc(c.name || "EcoVolter")}</div>
+        <div class="status" id="status"></div>
+      </div><ha-icon id="icon" icon="mdi:ev-station"></ha-icon></div>
+      ${minimal ? "" : `<div class="grid">${tile("power", t.power)}${tile("session_energy", t.session)}${tile("active_phases", t.phases)}${tile("configured_current", t.configured)}</div>`}
+      <div class="switches">
+        <button id="charge">⚡ ${esc(t.charge)}</button>
+        <button id="phase">〰 ${esc(t.phase)}</button>
+      </div>
+      ${control}
+      ${detail}
+    </ha-card>`;
+
+    this._bind();
+    this._built = true;
+    this._update();
+  }
+
+  _bind() {
+    const $ = (id) => this.shadowRoot.getElementById(id);
+    $("charge").addEventListener("click", () => this._toggle("charging_enabled"));
+    $("phase").addEventListener("click", () => this._toggle("three_phase"));
+
+    const slider = $("slider");
+    if (slider) {
+      const start = () => { this._dragging = true; this._dragAt = Date.now(); };
+      const stop = () => { this._dragging = false; };
+      slider.addEventListener("pointerdown", start);
+      slider.addEventListener("touchstart", start, { passive: true });
+      slider.addEventListener("input", (e) => {
+        start();
+        $("sliderVal").textContent = e.target.value + " A";
+      });
+      slider.addEventListener("change", (e) => { stop(); this._sendCurrent(e.target.value); });
+      // Safety nets: never let the card stay "frozen" in drag mode.
+      for (const ev of ["pointerup", "pointercancel", "touchend", "touchcancel", "blur"]) {
+        slider.addEventListener(ev, () => setTimeout(stop, 50), { passive: true });
+      }
+    }
+
+    const input = $("ampInput");
+    if (input) {
+      input.addEventListener("focus", () => { this._editing = true; input.select?.(); });
+      input.addEventListener("blur", () => {
+        this._editing = false;
+        this._commitInput(input);
+      });
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); input.blur(); }
+      });
+      $("minus").addEventListener("click", () => this._step(-1));
+      $("plus").addEventListener("click", () => this._step(1));
+    }
+  }
+
+  /* ---------- update values in place ---------- */
+
+  _update() {
+    if (!this._built || !this._hass) return;
+    const root = this.shadowRoot;
+    const t = this._t;
+    const set = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
+
+    root.querySelectorAll("[data-v]").forEach((el) => set(el, this._fmt(el.dataset.v)));
+
+    const conn = this._s("vehicle_connected");
+    const chg = this._s("charging");
+    const unavailable = isBad(conn) && isBad(this._s("charging_enabled"));
+    const status = root.getElementById("status");
+    let txt;
+    if (unavailable) txt = t.unavailable;
+    else {
+      txt = (conn?.state === "on" ? "🟢 " + t.connected : "⚪ " + t.disconnected) +
+        " · " + (chg?.state === "on" ? t.charging : t.idle);
+      if (this._config.variant === "minimalistic") {
+        txt += ` · ${t.phases}: ${this._fmt("active_phases")} · ${t.power}: ${this._fmt("power")} · ${t.session}: ${this._fmt("session_energy")}`;
+      }
+    }
+    set(status, txt);
+    status.classList.toggle("bad", unavailable);
+    root.getElementById("icon")?.classList.toggle("active", chg?.state === "on");
+
+    for (const [id, key] of [["charge", "charging_enabled"], ["phase", "three_phase"]]) {
+      const btn = root.getElementById(id);
+      const s = this._s(key);
+      const on = this._effective(key, s?.state === "on");
+      btn.classList.toggle("on", !!on);
+      btn.classList.toggle("pending", !!this._pending[key]);
+      btn.disabled = isBad(s);
+    }
+
+    const num = this._s("target_current");
+    const actual = ampOf(num);
+    const amp = this._effective("target_current", actual);
+    const disabled = actual == null;
+
+    const slider = root.getElementById("slider");
+    if (slider) {
+      slider.disabled = disabled;
+      // Do not fight the user's finger. Drag mode expires after 10 s as a fallback.
+      if (this._dragging && Date.now() - this._dragAt > 10000) this._dragging = false;
+      if (!this._dragging && amp != null) {
+        if (slider.value !== String(amp)) slider.value = String(amp);
+        set(root.getElementById("sliderVal"), amp + " A");
+      }
+    }
+    const input = root.getElementById("ampInput");
+    if (input) {
+      input.disabled = disabled;
+      root.getElementById("minus").disabled = disabled;
+      root.getElementById("plus").disabled = disabled;
+      if (!this._editing && amp != null && input.value !== String(amp)) input.value = String(amp);
+    }
+  }
+
+  /* ---------- actions ---------- */
+
+  _notify(err) {
+    console.error("EcoVolter card:", err);
+    this.dispatchEvent(new CustomEvent("hass-notification", {
+      detail: { message: `${this._t.failed}: ${err?.message || err}` },
+      bubbles: true, composed: true,
+    }));
+  }
+
+  async _call(domain, service, data, pendingKey) {
+    try {
+      await this._hass.callService(domain, service, data);
+    } catch (err) {
+      delete this._pending[pendingKey];
+      this._update();
+      this._notify(err);
+    }
+  }
+
+  _toggle(key) {
+    const s = this._s(key);
+    if (isBad(s)) return;
+    const turnOn = !this._effective(key, s.state === "on");
+    this._setPending(key, turnOn);
+    this._update();
+    this._call("switch", turnOn ? "turn_on" : "turn_off", { entity_id: s.entity_id }, key);
+  }
+
+  _sendCurrent(value) {
+    const s = this._s("target_current");
+    const actual = ampOf(s);
+    if (actual == null) return;
+    const v = clampA(value);
+    if (!Number.isFinite(v)) return;
+    this._setPending("target_current", v);
+    this._update();
+    if (v === actual) return; // nothing to send
+    this._call("number", "set_value", { entity_id: s.entity_id, value: v }, "target_current");
+  }
+
+  _step(delta) {
+    const s = this._s("target_current");
+    const actual = ampOf(s);
+    if (actual == null) return;
+    const cur = this._effective("target_current", actual);
+    const v = clampA(cur + delta);
+    this._setPending("target_current", v);
+    this._update();
+    // Debounce: tapping + three times sends one request, not three.
+    clearTimeout(this._stepTimer);
+    this._stepTimer = setTimeout(() => this._sendCurrent(v), STEP_DEBOUNCE_MS);
+  }
+
+  _commitInput(input) {
+    const n = Number(input.value);
+    if (!input.value || !Number.isFinite(n)) { this._update(); return; }
+    const v = clampA(n);
+    input.value = String(v);
+    this._sendCurrent(v);
+  }
+}
+
+class EcoVolterCardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { variant: "compact", language: "cs", current_control: "slider", ...config };
+    this._render();
+  }
+
+  set hass(hass) {
+    const first = !this._hass;
+    this._hass = hass;
+    const sig = ecovolterDevices(hass).map((d) => d.id + d.name).join("|");
+    if (first || sig !== this._sig) { this._sig = sig; this._render(); }
+  }
+
+  _fire(key, value) {
+    if (value == null || this._config[key] === value) return;
+    this._config = { ...this._config, [key]: value };
+    if (key === "name" && !value) delete this._config.name;
+    this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: this._config }, bubbles: true, composed: true }));
+  }
+
+  _render() {
+    if (!this._config) return;
+    // Do not re-render while the user is typing into the name field.
+    if (this.shadowRoot?.activeElement?.id === "n") return;
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const c = this._config;
+    const ds = this._hass ? ecovolterDevices(this._hass) : [];
+    const opt = (v, label, sel) => `<option value="${esc(v)}" ${sel ? "selected" : ""}>${esc(label)}</option>`;
+    this.shadowRoot.innerHTML = `<style>
+      .w{display:grid;gap:14px}.field{display:grid;gap:6px}
+      .label{font-size:12px;color:var(--secondary-text-color)}
+      select,input{box-sizing:border-box;width:100%;height:48px;padding:0 12px;border:1px solid var(--divider-color);border-radius:4px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit}
+    </style><div class="w">
+      <label class="field"><span class="label">Nabíječka / Charger</span><select id="d">
+        ${opt("", "Vyberte EcoVolter…", !c.device)}
+        ${ds.map((d) => opt(d.id, d.name, d.id === c.device)).join("")}
+      </select></label>
+      <label class="field"><span class="label">Varianta / Variant</span><select id="v">
+        ${opt("minimalistic", "Minimalistic", c.variant === "minimalistic")}
+        ${opt("compact", "Compact", c.variant === "compact")}
+        ${opt("detailed", "Detailed", c.variant === "detailed")}
+      </select></label>
+      <label class="field"><span class="label">Ovládání proudu / Current control</span><select id="c">
+        ${opt("slider", "Slider", c.current_control !== "buttons")}
+        ${opt("buttons", "− / hodnota / +", c.current_control === "buttons")}
+      </select></label>
+      <label class="field"><span class="label">Jazyk / Language</span><select id="l">
+        ${opt("cs", "Čeština", c.language !== "en")}
+        ${opt("en", "English", c.language === "en")}
+      </select></label>
+      <label class="field"><span class="label">Název / Name</span><input id="n" value="${esc(c.name || "")}" placeholder="EcoVolter"></label>
+    </div>`;
+    const $ = (id) => this.shadowRoot.getElementById(id);
+    $("d").addEventListener("change", (e) => this._fire("device", e.target.value));
+    $("v").addEventListener("change", (e) => this._fire("variant", e.target.value));
+    $("c").addEventListener("change", (e) => this._fire("current_control", e.target.value));
+    $("l").addEventListener("change", (e) => this._fire("language", e.target.value));
+    $("n").addEventListener("change", (e) => this._fire("name", e.target.value));
+  }
+}
+
+if (!customElements.get("ecovolter-card")) customElements.define("ecovolter-card", EcoVolterCard);
+if (!customElements.get("ecovolter-card-editor")) customElements.define("ecovolter-card-editor", EcoVolterCardEditor);
+window.customCards = window.customCards || [];
+if (!window.customCards.some((c) => c.type === "ecovolter-card")) {
+  window.customCards.push({
+    type: "ecovolter-card",
+    name: "EcoVolter",
+    description: "EcoVolter charger card with device selection",
+    preview: true,
+    documentationURL: "https://github.com/itsit-cz/HA-ecovolter",
+  });
+}
+console.info("EcoVolter Card " + VERSION);

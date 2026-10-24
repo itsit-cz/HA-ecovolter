@@ -22,7 +22,7 @@ Vlastní integrace EcoVolter pro Home Assistant využívající lokální API na
 - Nastavení nabíjecího proudu 6–16 A
 - České a anglické rozhraní v Home Assistantu
 - Vlastní EcoVolter karta: Minimalistic / Compact / Detailed, výběr nabíječky a CZ/EN
-- Živá telemetrie s obnovou stavu každou 1 s
+- Živá telemetrie s obnovou stavu každé 2 s (nastavitelné 1–60 s v Možnostech integrace)
 - Nastavení nabíječky načítané odděleně a ovládané přes PATCH
 - Serializace API požadavků pro stabilnější komunikaci
 
@@ -50,6 +50,10 @@ Při konfiguraci zadejte:
 ## Hostname / DNS
 
 Pokud zadáte hostname, integrace jej přeloží na IP adresu a tuto IP uloží do cache. Běžná komunikace s API následně probíhá přímo přes IP adresu, aby byla co nejrychlejší.
+
+Pokud nabíječka přestane odpovídat, integrace postupně zpomalí dotazování (až na 30 s), aby se nabíječka mohla zotavit. Po 60 s bez odpovědi se entity označí jako nedostupné, místo aby ukazovaly zamrzlé hodnoty.
+
+Po aktualizaci karty v mobilní aplikaci Home Assistant: pokud se stále načítá stará verze, použijte v aplikaci *Nastavení → Companion app → Ladění → Obnovit frontend cache* (nebo aplikaci restartujte).
 
 Hostname se znovu překládá každých 60 minut. Pokud komunikace se zapamatovanou IP selže kvůli síťové chybě, integrace okamžitě provede nový DNS překlad a požadavek jednou zopakuje.
 

@@ -2,84 +2,142 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import timedelta
 import logging
 import time
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import EcoVolterApi, EcoVolterError
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from .api import EcoVolterApi, EcoVolterAuthError, EcoVolterError
+from .const import (
+    DEFAULT_SCAN_INTERVAL,
+    DIAGNOSTIC_REFRESH_SECONDS,
+    DOMAIN,
+    MAX_BACKOFF_INTERVAL,
+    SETTINGS_REFRESH_SECONDS,
+    SETTINGS_VERIFY_AFTER_WRITE_SECONDS,
+    STALE_AFTER_SECONDS,
+)
 
 _LOGGER = logging.getLogger(__name__)
-_DIAGNOSTIC_INTERVAL = 60
 
 
 class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinate EcoVolter data without dropping good data on partial failures."""
+    """Coordinate EcoVolter data.
 
-    def __init__(self, hass: HomeAssistant, api: EcoVolterApi) -> None:
+    - Short glitches keep the last good data (no flapping to "unavailable").
+    - Longer outages make entities unavailable instead of showing frozen values.
+    - While the charger does not answer, polling backs off so it can recover.
+    """
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: EcoVolterApi,
+        scan_interval: int = DEFAULT_SCAN_INTERVAL,
+    ) -> None:
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+            update_interval=timedelta(seconds=scan_interval),
         )
         self.api = api
+        self._base_interval = scan_interval
         self._status: dict[str, Any] = {}
         self._settings: dict[str, Any] = {}
         self._diagnostic: dict[str, Any] = {}
+        self._last_status_ok: float | None = None
         self._last_diagnostic = 0.0
         self._last_settings = 0.0
-        self._write_lock = asyncio.Lock()
+        self._failures = 0
+        self._logged_unavailable = False
 
-    async def _safe_read(
-        self,
-        name: str,
-        reader,
-        previous: dict[str, Any],
-    ) -> tuple[dict[str, Any], bool]:
-        """Read one API section, preserving the last good value on failure."""
+    async def _safe_read(self, name: str, reader) -> dict[str, Any] | None:
+        """Read one API section; return None on failure."""
         try:
-            return await reader(), True
+            return await reader()
+        except EcoVolterAuthError:
+            raise
         except EcoVolterError as err:
-            _LOGGER.warning("EcoVolter %s refresh failed; keeping last good data: %s", name, err)
-            return previous, False
+            # Log only the first failure of a series, not every poll.
+            if self._failures == 0:
+                _LOGGER.debug("EcoVolter %s refresh failed: %s", name, err)
+            return None
+
+    def _apply_backoff(self, ok: bool) -> None:
+        if ok:
+            if self._failures:
+                self._failures = 0
+                self.update_interval = timedelta(seconds=self._base_interval)
+            return
+        self._failures += 1
+        delay = min(
+            MAX_BACKOFF_INTERVAL, self._base_interval * (2 ** min(self._failures, 5))
+        )
+        self.update_interval = timedelta(seconds=max(self._base_interval, delay))
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Refresh independent API sections and keep last known good values."""
-        status, status_ok = await self._safe_read(
-            "status", self.api.async_get_status, self._status
-        )
+        try:
+            return await self._async_update_data_inner()
+        except EcoVolterAuthError as err:
+            raise UpdateFailed(f"Authentication failed: {err}") from err
+
+    async def _async_update_data_inner(self) -> dict[str, Any]:
         now = time.monotonic()
-        settings_ok = True
-        if now - self._last_settings >= 60 or not self._settings:
-            settings, settings_ok = await self._safe_read(
-                "settings", self.api.async_get_settings, self._settings
+
+        status = await self._safe_read("status", self.api.async_get_status)
+        status_ok = status is not None
+        if status_ok:
+            self._status = status
+            self._last_status_ok = now
+
+        # When the charger is not answering status, do not pile more requests
+        # on top of it in the same cycle.
+        if status_ok:
+            if now - self._last_settings >= SETTINGS_REFRESH_SECONDS or not self._settings:
+                settings = await self._safe_read("settings", self.api.async_get_settings)
+                if settings is not None:
+                    self._settings = settings
+                    self._last_settings = now
+
+            if (
+                now - self._last_diagnostic >= DIAGNOSTIC_REFRESH_SECONDS
+                or not self._diagnostic
+            ):
+                diagnostic = await self._safe_read(
+                    "diagnostic", self.api.async_get_diagnostic
+                )
+                if diagnostic is not None:
+                    self._diagnostic = diagnostic
+                    self._last_diagnostic = now
+
+        self._apply_backoff(status_ok)
+
+        if not status_ok:
+            stale = (
+                self._last_status_ok is None
+                or now - self._last_status_ok > STALE_AFTER_SECONDS
             )
-            if settings_ok:
-                self._settings = settings
-                self._last_settings = now
+            if stale:
+                if not self._logged_unavailable:
+                    _LOGGER.warning(
+                        "EcoVolter %s is not responding; retrying every %ss",
+                        self.api.host,
+                        int(self.update_interval.total_seconds()),
+                    )
+                    self._logged_unavailable = True
+                raise UpdateFailed("EcoVolter is not responding")
+        elif self._logged_unavailable:
+            _LOGGER.info("EcoVolter %s is responding again", self.api.host)
+            self._logged_unavailable = False
 
-        self._status = status
+        return self._snapshot()
 
-        if now - self._last_diagnostic >= _DIAGNOSTIC_INTERVAL or not self._diagnostic:
-            diagnostic, diagnostic_ok = await self._safe_read(
-                "diagnostic", self.api.async_get_diagnostic, self._diagnostic
-            )
-            if diagnostic_ok:
-                self._diagnostic = diagnostic
-                self._last_diagnostic = now
-
-        # Initial setup still needs at least one useful response. After that,
-        # temporary failures retain the previous data instead of making every
-        # EcoVolter entity unavailable.
-        if not status_ok and not settings_ok and not (self._status or self._settings):
-            raise UpdateFailed("Unable to read EcoVolter status or settings")
-
+    def _snapshot(self) -> dict[str, Any]:
         return {
             "status": self._status,
             "settings": self._settings,
@@ -87,23 +145,18 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
 
     async def async_patch_settings(self, settings: dict[str, Any]) -> None:
-        """Write settings, update HA immediately, then confirm them from the charger."""
-        async with self._write_lock:
+        """Write settings, update HA immediately, verify shortly afterwards."""
+        try:
             await self.api.async_patch_settings(settings)
+        except EcoVolterError as err:
+            raise HomeAssistantError(f"EcoVolter: zápis se nezdařil ({err})") from err
 
-            # Optimistic local update makes controls react immediately.
-            self._settings = {**self._settings, **settings}
-            current = self.data or {}
-            self.async_set_updated_data(
-                {
-                    "status": current.get("status", self._status),
-                    "settings": self._settings,
-                    "diagnostic": current.get("diagnostic", self._diagnostic),
-                }
-            )
+        # Optimistic local update makes controls react immediately.
+        self._settings = {**self._settings, **settings}
 
-            # Do not immediately GET settings after a PATCH. Some EcoVolter
-            # firmware briefly returns the old value, which makes HA controls jump
-            # backwards. Keep the acknowledged local value and verify settings on
-            # the normal one-minute settings refresh.
-            self._last_settings = time.monotonic()
+        # Some firmware briefly returns the old value right after a PATCH, so
+        # do not read back immediately – verify a few seconds later instead.
+        self._last_settings = (
+            time.monotonic() - SETTINGS_REFRESH_SECONDS + SETTINGS_VERIFY_AFTER_WRITE_SECONDS
+        )
+        self.async_set_updated_data(self._snapshot())

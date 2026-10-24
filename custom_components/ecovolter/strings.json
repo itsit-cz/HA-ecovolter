@@ -79,5 +79,16 @@
         "name": "Charging current"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "description": "Live status refresh interval (seconds). 2 s is recommended; 1 s may overload some chargers.",
+        "data": {
+          "scan_interval": "Refresh interval (s)"
+        }
+      }
+    }
   }
 }
