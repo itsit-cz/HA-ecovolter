@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.const import UnitOfElectricCurrent
+from homeassistant.const import UnitOfElectricCurrent, UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -17,8 +17,15 @@ async def async_setup_entry(
     entry: EcoVolterConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
+    coordinator = entry.runtime_data
     async_add_entities(
-        [EcoVolterCurrentNumber(entry.runtime_data, entry.entry_id, entry.title)]
+        [
+            EcoVolterCurrentNumber(coordinator, entry.entry_id, entry.title),
+            *(
+                EcoVolterSchedulerNumber(coordinator, entry.entry_id, entry.title, spec)
+                for spec in SCHEDULER_NUMBERS
+            ),
+        ]
     )
 
 
@@ -42,3 +49,37 @@ class EcoVolterCurrentNumber(EcoVolterEntity, NumberEntity):
         await self.coordinator.async_patch_settings(
             {"targetCurrent": int(value)}
         )
+
+
+SCHEDULER_NUMBERS = (
+    # key, config key, min, max, step, unit, icon
+    ("target_hours", "target_hours", 0, 24, 0.25, UnitOfTime.HOURS, "mdi:timer-outline"),
+    ("target_energy", "target_energy", 0, 150, 1, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-charging"),
+    ("max_price", "max_price", 0, 30, 0.1, "CZK/kWh", "mdi:cash-lock"),
+)
+
+
+class EcoVolterSchedulerNumber(EcoVolterEntity, NumberEntity):
+    _attr_mode = NumberMode.BOX
+
+    def __init__(self, coordinator, entry_id, device_name, spec):
+        super().__init__(coordinator, entry_id, device_name)
+        key, self._option, lo, hi, step, unit, icon = spec
+        self._attr_translation_key = key
+        self._attr_unique_id = f"{entry_id}_{key}"
+        self._attr_native_min_value = lo
+        self._attr_native_max_value = hi
+        self._attr_native_step = step
+        self._attr_native_unit_of_measurement = unit
+        self._attr_icon = icon
+
+    @property
+    def native_value(self):
+        return float(self.coordinator.scheduler.config[self._option])
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_set_native_value(self, value: float) -> None:
+        self.coordinator.scheduler.set_option(self._option, float(value))

@@ -155,8 +155,14 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        EcoVolterSensor(coordinator, entry.entry_id, entry.title, description)
-        for description in SENSORS
+        [
+            *(
+                EcoVolterSensor(coordinator, entry.entry_id, entry.title, description)
+                for description in SENSORS
+            ),
+            EcoVolterPlanSensor(coordinator, entry.entry_id, entry.title),
+            EcoVolterPriceSensor(coordinator, entry.entry_id, entry.title),
+        ]
     )
 
 
@@ -172,3 +178,52 @@ class EcoVolterSensor(EcoVolterEntity, SensorEntity):
     def native_value(self):
         section = self.coordinator.data.get(self.entity_description.section, {})
         return self.entity_description.value_fn(section)
+
+
+class EcoVolterPlanSensor(EcoVolterEntity, SensorEntity):
+    """Next planned charging start; the full plan is in the attributes."""
+
+    _attr_translation_key = "charging_plan"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:calendar-clock"
+    # The slot list changes often and is large – keep it out of the recorder.
+    _unrecorded_attributes = frozenset({"slots"})
+
+    def __init__(self, coordinator, entry_id, device_name):
+        super().__init__(coordinator, entry_id, device_name)
+        self._attr_unique_id = f"{entry_id}_charging_plan"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def native_value(self):
+        return self.coordinator.scheduler.next_start()
+
+    @property
+    def extra_state_attributes(self):
+        return self.coordinator.scheduler.plan_attributes()
+
+
+class EcoVolterPriceSensor(EcoVolterEntity, SensorEntity):
+    """Current electricity price including distribution (VT/NT)."""
+
+    _attr_translation_key = "current_total_price"
+    _attr_native_unit_of_measurement = "CZK/kWh"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:cash"
+
+    def __init__(self, coordinator, entry_id, device_name):
+        super().__init__(coordinator, entry_id, device_name)
+        self._attr_unique_id = f"{entry_id}_current_total_price"
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.scheduler.current_price is not None
+
+    @property
+    def native_value(self):
+        price = self.coordinator.scheduler.current_price
+        return round(price, 4) if price is not None else None

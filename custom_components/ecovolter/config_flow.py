@@ -10,6 +10,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import (
@@ -18,8 +19,13 @@ from .api import (
     EcoVolterConnectionError,
     EcoVolterError,
 )
+from .scheduler import parse_vt_windows
 from .const import (
+    CONF_DISTRIBUTION_NT,
+    CONF_DISTRIBUTION_VT,
+    CONF_PRICE_ENTITY,
     CONF_SCAN_INTERVAL,
+    CONF_VT_WINDOWS,
     CONF_SECRET,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -87,23 +93,56 @@ class EcoVolterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class EcoVolterOptionsFlow(config_entries.OptionsFlow):
-    """EcoVolter options (refresh interval)."""
+    """EcoVolter options: refresh interval and scheduler price settings."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(data=user_input)
+            try:
+                parse_vt_windows(user_input.get(CONF_VT_WINDOWS, ""))
+            except ValueError:
+                errors[CONF_VT_WINDOWS] = "invalid_vt_windows"
+            else:
+                return self.async_create_entry(data=user_input)
 
-        current = self.config_entry.options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        opts = {**self.config_entry.options, **(user_input or {})}
+        price_key = (
+            vol.Optional(CONF_PRICE_ENTITY, description={"suggested_value": opts[CONF_PRICE_ENTITY]})
+            if opts.get(CONF_PRICE_ENTITY)
+            else vol.Optional(CONF_PRICE_ENTITY)
+        )
+        price_number = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0, max=20, step=0.001, unit_of_measurement="CZK/kWh",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
         return self.async_show_form(
             step_id="init",
+            errors=errors,
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
+                    vol.Required(
+                        CONF_SCAN_INTERVAL,
+                        default=opts.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                    ): vol.All(
                         vol.Coerce(int),
                         vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
                     ),
+                    price_key: selector.EntitySelector(
+                        selector.EntitySelectorConfig(domain="sensor")
+                    ),
+                    vol.Required(
+                        CONF_DISTRIBUTION_VT, default=opts.get(CONF_DISTRIBUTION_VT, 0.0)
+                    ): price_number,
+                    vol.Required(
+                        CONF_DISTRIBUTION_NT, default=opts.get(CONF_DISTRIBUTION_NT, 0.0)
+                    ): price_number,
+                    vol.Optional(
+                        CONF_VT_WINDOWS, default=opts.get(CONF_VT_WINDOWS, "")
+                    ): selector.TextSelector(),
                 }
             ),
         )
