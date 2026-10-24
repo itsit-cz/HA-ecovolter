@@ -10,14 +10,18 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
 from .api import EcoVolterApi
-from .const import CONF_SCAN_INTERVAL, CONF_SECRET, DEFAULT_SCAN_INTERVAL, PLATFORMS
+from .const import CONF_SCAN_INTERVAL, CONF_SECRET, DEFAULT_SCAN_INTERVAL, DOMAIN, PLATFORMS
 from .coordinator import EcoVolterCoordinator
 from .options import normalize_options
 from .scheduler import EcoVolterScheduler
+
+# Set up from the UI only (no YAML configuration).
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 type EcoVolterConfigEntry = ConfigEntry[EcoVolterCoordinator]
 
