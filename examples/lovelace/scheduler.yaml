@@ -1,0 +1,51 @@
+# EcoVolter - Plánovač nabíjení
+# Native Home Assistant cards only.
+# Replace the example entity IDs with the IDs from your EcoVolter device
+# (Settings → Devices & services → EcoVolter → device).
+
+type: vertical-stack
+cards:
+  - type: tile
+    entity: select.ecovolter_rezim_nabijeni
+    name: Režim nabíjení
+    icon: mdi:calendar-clock
+    features_position: bottom
+    features:
+      - type: select-options
+
+  - type: tile
+    entity: sensor.ecovolter_dalsi_planovane_nabijeni
+    name: Další start
+    icon: mdi:clock-start
+    state_content:
+      - state
+      - estimated_cost
+
+  - type: entities
+    show_header_toggle: false
+    entities:
+      - entity: select.ecovolter_cil_nabijeni
+        name: Cíl
+      - entity: number.ecovolter_hodin_nabijeni
+        name: Hodin nabíjení
+      - entity: number.ecovolter_nabit_energie
+        name: Nabít energie
+      - entity: time.ecovolter_hotovo_do
+        name: Hotovo do
+      - entity: number.ecovolter_maximalni_cena
+        name: Max. cena (0 = bez limitu)
+      - type: divider
+      - entity: binary_sensor.ecovolter_planovane_nabijeni_ted
+        name: Nabíjí podle plánu
+      - entity: sensor.ecovolter_cena_elektriny_vc_distribuce
+        name: Cena teď
+      - type: attribute
+        entity: sensor.ecovolter_dalsi_planovane_nabijeni
+        attribute: planned_minutes
+        name: Naplánováno
+        suffix: min
+      - type: attribute
+        entity: sensor.ecovolter_dalsi_planovane_nabijeni
+        attribute: delivered_minutes
+        name: Nabito v tomto cyklu
+        suffix: min

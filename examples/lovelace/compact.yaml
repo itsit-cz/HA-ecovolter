@@ -43,3 +43,16 @@ cards:
       - entity: number.ecovolter_target_current
         name: Nabíjecí proud
         icon: mdi:current-ac
+
+  - type: entities
+    title: Plánovač
+    show_header_toggle: false
+    entities:
+      - entity: select.ecovolter_rezim_nabijeni
+        name: Režim nabíjení
+      - entity: number.ecovolter_hodin_nabijeni
+        name: Hodin nabíjení
+      - entity: time.ecovolter_hotovo_do
+        name: Hotovo do
+      - entity: sensor.ecovolter_dalsi_planovane_nabijeni
+        name: Další start
