@@ -13,7 +13,7 @@ from datetime import datetime, time as dtime, timedelta
 import logging
 import re
 import time as monotonic
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.storage import Store
@@ -32,7 +32,12 @@ MODES = [MODE_MANUAL, MODE_CHEAPEST, MODE_PRICE_LIMIT, MODE_LOW_TARIFF]
 
 TARGET_HOURS = "hours"
 TARGET_ENERGY = "energy"
-TARGET_TYPES = [TARGET_HOURS, TARGET_ENERGY]
+TARGET_SOC = "soc"
+TARGET_TYPES = [TARGET_HOURS, TARGET_ENERGY, TARGET_SOC]
+
+PRICE_SENSOR = "sensor"  # spot / final-price sensor
+PRICE_FIXED = "fixed"  # fixed two-rate tariff (VT/NT)
+PRICE_TYPES = [PRICE_SENSOR, PRICE_FIXED]
 
 READY_TODAY = "today"  # nearest occurrence of the time (repeats daily)
 READY_TOMORROW = "tomorrow"
@@ -140,7 +145,7 @@ def price_list_attribute(state: State | None) -> list[dict[str, Any]] | None:
 
 
 def _slots_from_list(
-    items: list[dict[str, Any]], factor: float, vt_windows: list[tuple[dtime, dtime]]
+    items: list[dict[str, Any]], factor: float, vt_windows: Any
 ) -> list[PriceSlot]:
     """Final prices (already incl. VAT and distribution) – no distribution is added."""
     points: list[tuple[datetime, float, bool, datetime | None]] = []
@@ -158,7 +163,7 @@ def _slots_from_list(
         end = item.get("end")
         end = dt_util.parse_datetime(end) if isinstance(end, str) else end
         tariff = str(item.get("tariff") or "").upper()
-        low = tariff != "VT" if tariff in ("VT", "NT") else not is_vt(dt_util.as_local(start), vt_windows)
+        low = tariff != "VT" if tariff in ("VT", "NT") else _low(dt_util.as_local(start), vt_windows)
         points.append(
             (dt_util.as_local(start), price, low, dt_util.as_local(end) if isinstance(end, datetime) else None)
         )
@@ -178,12 +183,107 @@ def _default_step(starts: list[datetime]) -> timedelta:
     return min(gaps) if gaps else timedelta(hours=1)
 
 
+def _low(moment: datetime, tariff: Any) -> bool:
+    """True when the low tariff (NT) applies; tariff = VT windows or a callable."""
+    if callable(tariff):
+        return bool(tariff(moment))
+    return not is_vt(moment, tariff or [])
+
+
+def parse_hdo_windows(state: State | None) -> list[tuple[datetime, datetime]]:
+    """Low-tariff (NT) windows from an HDO sensor.
+
+    Accepts any list attribute of {start, end} items (ISO datetimes), e.g. the
+    `next_windows` attribute of the ČEZ distribuce HDO sensor.
+    """
+    if state is None:
+        return []
+    windows: list[tuple[datetime, datetime]] = []
+    for value in state.attributes.values():
+        if not (isinstance(value, list) and value and isinstance(value[0], dict)):
+            continue
+        if not ("start" in value[0] and "end" in value[0]):
+            continue
+        for item in value:
+            start, end = item.get("start"), item.get("end")
+            start = dt_util.parse_datetime(start) if isinstance(start, str) else start
+            end = dt_util.parse_datetime(end) if isinstance(end, str) else end
+            if isinstance(start, datetime) and isinstance(end, datetime) and end > start:
+                windows.append((dt_util.as_local(start), dt_util.as_local(end)))
+    windows.sort()
+    return windows
+
+
+class TariffModel:
+    """Decides VT/NT for any moment from HDO windows, a binary sensor and/or fixed VT times."""
+
+    def __init__(
+        self,
+        vt_windows: list[tuple[dtime, dtime]],
+        hdo_windows: list[tuple[datetime, datetime]] | None = None,
+        hdo_now: bool | None = None,
+        now: datetime | None = None,
+    ) -> None:
+        self.vt_windows = vt_windows
+        self.hdo_windows = hdo_windows or []
+        self.hdo_now = hdo_now
+        self.now = now
+        # daily pattern learned from the HDO windows, used past their horizon
+        self._pattern: list[tuple[dtime, dtime]] = []
+        if self.hdo_windows and not vt_windows:
+            last_day = self.hdo_windows[-1][0].date()
+            day = [w for w in self.hdo_windows if w[0].date() == last_day] or self.hdo_windows[-3:]
+            self._pattern = [(a.time(), b.time()) for a, b in day]
+
+    def __call__(self, moment: datetime) -> bool:
+        if self.hdo_now is not None and self.now is not None:
+            if abs((moment - self.now).total_seconds()) < 60 or (
+                moment <= self.now < moment + timedelta(minutes=15)
+            ):
+                return self.hdo_now
+        if self.hdo_windows:
+            first, last = self.hdo_windows[0][0], self.hdo_windows[-1][1]
+            if first <= moment < last:
+                return any(a <= moment < b for a, b in self.hdo_windows)
+            if self._pattern:
+                return is_vt(moment, self._pattern)  # pattern holds NT windows
+        return not is_vt(moment, self.vt_windows)
+
+
+def fixed_tariff_slots(
+    start: datetime,
+    end: datetime,
+    tariff: Any,
+    energy_vt: float,
+    energy_nt: float,
+    dist_vt: float,
+    dist_nt: float,
+) -> list[PriceSlot]:
+    """15-minute slots for a fixed two-rate tariff (energy + distribution per VT/NT)."""
+    step = timedelta(minutes=15)
+    t = start.replace(minute=start.minute - start.minute % 15, second=0, microsecond=0)
+    slots = []
+    while t < end:
+        low = _low(t, tariff)
+        slots.append(
+            PriceSlot(
+                start=t,
+                end=t + step,
+                spot=energy_nt if low else energy_vt,
+                distribution=dist_nt if low else dist_vt,
+                low_tariff=low,
+            )
+        )
+        t += step
+    return slots
+
+
 def parse_prices(
     state: State | None,
     *,
     dist_vt: float = 0.0,
     dist_nt: float = 0.0,
-    vt_windows: list[tuple[dtime, dtime]] | None = None,
+    vt_windows: Any = None,
 ) -> list[PriceSlot]:
     """Read price slots from a sensor.
 
@@ -199,7 +299,7 @@ def parse_prices(
     factor = 0.001 if "MWh" in unit else 1.0
     items = price_list_attribute(state)
     if items is not None:
-        return _slots_from_list(items, factor, vt_windows or [])
+        return _slots_from_list(items, factor, vt_windows)
     points: list[tuple[datetime, float]] = []
     for key, value in state.attributes.items():
         if not isinstance(key, str) or not key[:1].isdigit():
@@ -216,12 +316,12 @@ def parse_prices(
     points.sort()
     gaps = [b[0] - a[0] for a, b in zip(points, points[1:]) if b[0] > a[0]]
     default = min(gaps) if gaps else timedelta(hours=1)
-    windows = vt_windows or []
+    windows = vt_windows
     slots = []
     for i, (start, spot) in enumerate(points):
         end = points[i + 1][0] if i + 1 < len(points) else start + default
         end = min(end, start + default)  # a gap in the data is not one huge slot
-        low = not is_vt(start, windows)
+        low = _low(start, windows)
         slots.append(
             PriceSlot(
                 start=start,
@@ -237,7 +337,7 @@ def parse_prices(
 def extend_with_estimate(
     slots: list[PriceSlot],
     deadline: datetime,
-    vt_windows: list[tuple[dtime, dtime]] | None = None,
+    vt_windows: Any = None,
     dist_vt: float = 0.0,
     dist_nt: float = 0.0,
 ) -> list[PriceSlot]:
@@ -258,7 +358,7 @@ def extend_with_estimate(
     out = list(slots)
     start = slots[-1].end
     while start < deadline:
-        low = not is_vt(start, vt_windows or [])
+        low = _low(start, vt_windows)
         dist = (dist_nt if low else dist_vt) if has_distribution else 0.0
         out.append(
             PriceSlot(start=start, end=start + step, spot=avg_spot, distribution=dist, low_tariff=low, estimated=True)
@@ -330,6 +430,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "target_type": TARGET_HOURS,
     "target_hours": 3.0,
     "target_energy": 20.0,
+    "target_soc": 80.0,
     "ready_by": "07:00",
     # Fixed date for the deadline (YYYY-MM-DD) chosen as "tomorrow"/"day after";
     # None = nearest occurrence of ready_by. Cleared once that deadline passes.
@@ -353,9 +454,18 @@ class EcoVolterScheduler:
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"ecovolter.scheduler.{entry_id}"
         )
+        num = lambda key, default=0.0: float(options.get(key, default) or default)  # noqa: E731
+        self.price_type: str = options.get("price_type") or PRICE_SENSOR
         self.price_entity: str | None = options.get("price_entity") or None
-        self.dist_vt = float(options.get("distribution_vt", 0.0) or 0.0)
-        self.dist_nt = float(options.get("distribution_nt", 0.0) or 0.0)
+        self.dist_vt = num("distribution_vt")
+        self.dist_nt = num("distribution_nt")
+        self.energy_vt = num("energy_vt")
+        self.energy_nt = num("energy_nt")
+        self.hdo_entity: str | None = options.get("hdo_entity") or None
+        self.soc_entity: str | None = options.get("soc_entity") or None
+        self.battery_kwh = num("battery_kwh", 0.0)
+        self.efficiency = min(100.0, max(50.0, num("charging_efficiency", 90.0))) / 100
+        self.tariff: Any = None
         try:
             self.vt_windows = parse_vt_windows(options.get("vt_windows", ""))
         except ValueError:
@@ -422,12 +532,21 @@ class EcoVolterScheduler:
 
     @callback
     def set_option(self, key: str, value: Any) -> None:
-        rearm = key in ("mode", "target_type", "target_hours", "target_energy", "ready_by", "ready_date")
+        rearm = key in (
+            "mode", "target_type", "target_hours", "target_energy", "target_soc",
+            "ready_by", "ready_date",
+        )
+        # Any change of the plan takes control again right away: forget a manual
+        # override and do not wait for the command rate limit.
+        self._override_desired = None
+        self._last_command = -1e9
         if self.config.get(key) == value:
             # Setting the same target again (e.g. a daily automation) starts a
             # new plan after the previous one was completed.
             if rearm and self.finished:
                 self.rearm()
+            else:
+                self.hass.async_create_task(self.async_apply())
             return
         self.config[key] = value
         if rearm and self.finished:
@@ -439,7 +558,7 @@ class EcoVolterScheduler:
             self._override_desired = None
         if key == "mode" and value == MODE_MANUAL:
             self.charge_now = False
-        if key in ("target_type", "target_hours", "target_energy", "ready_by", "ready_date"):
+        if key in ("target_type", "target_hours", "target_energy", "target_soc", "ready_by", "ready_date"):
             # a new target starts a new cycle
             self.cycle_deadline = None
         self._save(1)
@@ -532,6 +651,24 @@ class EcoVolterScheduler:
         value = (self.coordinator.data or {}).get("settings", {}).get("isChargingEnable")
         return None if value is None else bool(value)
 
+    def _build_tariff(self, now: datetime) -> Any:
+        if not self.hdo_entity:
+            return self.vt_windows
+        state = self.hass.states.get(self.hdo_entity)
+        hdo_now = None
+        if state is not None and state.domain == "binary_sensor" and state.state in ("on", "off"):
+            hdo_now = state.state == "on"  # on = low tariff (NT) active
+        return TariffModel(self.vt_windows, parse_hdo_windows(state), hdo_now, now)
+
+    def soc(self) -> float | None:
+        if not self.soc_entity:
+            return None
+        state = self.hass.states.get(self.soc_entity)
+        try:
+            return float(state.state) if state is not None else None
+        except (TypeError, ValueError):
+            return None
+
     def resolve_price_entity(self) -> str | None:
         if self.price_entity:
             return self.price_entity
@@ -556,9 +693,20 @@ class EcoVolterScheduler:
 
     # ---- planning
 
+    def needed_kwh_soc(self) -> float | None:
+        current = self.soc()
+        if current is None or self.battery_kwh <= 0:
+            return None
+        missing = float(self.config["target_soc"]) - current
+        return max(0.0, missing / 100 * self.battery_kwh / self.efficiency)
+
     def needed_seconds(self) -> float:
         if self.finished:
             return 0.0
+        if self.config["target_type"] == TARGET_SOC:
+            kwh = self.needed_kwh_soc()
+            power = self._power_kw()
+            return kwh / power * 3600 if kwh and power > 0 else 0.0
         if self.config["target_type"] == TARGET_ENERGY:
             remaining_kwh = float(self.config["target_energy"]) - self.delivered_kwh
             power = self._power_kw()
@@ -575,14 +723,23 @@ class EcoVolterScheduler:
             self.cycle_deadline = deadline.isoformat()
             self._save(1)
 
-        entity_id = self.resolve_price_entity()
-        state = self.hass.states.get(entity_id) if entity_id else None
-        self.slots = parse_prices(
-            state, dist_vt=self.dist_vt, dist_nt=self.dist_nt, vt_windows=self.vt_windows
-        )
+        self.tariff = self._build_tariff(now)
+        if self.price_type == PRICE_FIXED:
+            self.slots = fixed_tariff_slots(
+                now - timedelta(minutes=15),
+                max(deadline, now + timedelta(hours=24)),
+                self.tariff,
+                self.energy_vt, self.energy_nt, self.dist_vt, self.dist_nt,
+            )
+        else:
+            entity_id = self.resolve_price_entity()
+            state = self.hass.states.get(entity_id) if entity_id else None
+            self.slots = parse_prices(
+                state, dist_vt=self.dist_vt, dist_nt=self.dist_nt, vt_windows=self.tariff
+            )
         prices_until = self.slots[-1].end if self.slots else None
         horizon = extend_with_estimate(
-            self.slots, deadline, self.vt_windows, self.dist_vt, self.dist_nt
+            self.slots, deadline, self.tariff, self.dist_vt, self.dist_nt
         ) if self.slots and self.slots[-1].end > now else self.slots
         max_price = float(self.config["max_price"] or 0) or None
         self.plan = build_plan(
@@ -595,7 +752,7 @@ class EcoVolterScheduler:
         if mode == MODE_MANUAL:
             self.charge_now, self.reason = False, "manual"
         elif mode == MODE_LOW_TARIFF:
-            self.charge_now = not is_vt(now, self.vt_windows)
+            self.charge_now = _low(now, self.tariff)
             self.reason = "low_tariff" if self.charge_now else "high_tariff"
         elif current is None:
             self.charge_now, self.reason = False, "no_prices"
@@ -603,10 +760,18 @@ class EcoVolterScheduler:
             limit = float(self.config["max_price"] or 0)
             self.charge_now = current.price <= limit
             self.reason = "below_limit" if self.charge_now else "above_limit"
+        elif (
+            mode == MODE_CHEAPEST
+            and not self.finished
+            and self.config["target_type"] == TARGET_SOC
+            and self.needed_kwh_soc() is None
+        ):
+            self.charge_now, self.reason = False, "no_soc"
         elif mode == MODE_CHEAPEST:
             if self.finished or self.plan.needed_seconds <= 0:
                 if not self.finished:
                     self.finished = True
+                    self._last_command = -1e9  # stop right away, no rate limit
                     self._save(1)
                     _LOGGER.info("EcoVolter scheduler: charging target reached")
                 self.charge_now, self.reason = False, "target_reached"
@@ -707,12 +872,20 @@ class EcoVolterScheduler:
         return {
             "mode": self.mode,
             "reason": self.reason,
-            "price_entity": self.resolve_price_entity(),
+            "price_entity": self.resolve_price_entity() if self.price_type == PRICE_SENSOR else None,
             "deadline": self.plan.deadline.isoformat() if self.plan.deadline else None,
             "needed_minutes": round(self.plan.needed_seconds / 60),
             "planned_minutes": round(self.plan.planned_seconds / 60),
             "complete": self.plan.complete,
             "finished": self.finished,
+            "price_type": self.price_type,
+            "soc": self.soc(),
+            "target_soc": float(self.config["target_soc"]),
+            "needed_kwh": (
+                round(self.needed_kwh_soc(), 2)
+                if self.config["target_type"] == TARGET_SOC and self.needed_kwh_soc() is not None
+                else None
+            ),
             "delivered_minutes": round(self.delivered_seconds / 60),
             "delivered_kwh": round(self.delivered_kwh, 2),
             "estimated_cost": round(self.plan.estimated_cost, 2),

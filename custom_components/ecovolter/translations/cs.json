@@ -8,12 +8,48 @@
           "host": "Sériové číslo, IP adresa nebo hostname",
           "secret": "API tajný klíč"
         }
+      },
+      "price_type": {
+        "title": "Cena elektřiny",
+        "description": "Jak se má počítat cena pro plánovač nabíjení?",
+        "data": {
+          "price_type": "Typ ceny"
+        }
+      },
+      "prices": {
+        "title": "Ceny",
+        "description": "**Senzor:** vyberte senzor ceny (prázdné = automaticky najít senzor s výslednou cenou nebo Czech Energy Spot Prices). Distribuce se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0.\n\n**Pevný dvoutarif:** cena silové elektřiny a distribuce za kWh ve VT a NT vč. DPH. Pro jednotarif zadejte stejné ceny do VT i NT.",
+        "data": {
+          "price_entity": "Cenový senzor",
+          "energy_vt": "Silová elektřina VT (Kč/kWh)",
+          "energy_nt": "Silová elektřina NT (Kč/kWh)",
+          "distribution_vt": "Distribuce VT (Kč/kWh)",
+          "distribution_nt": "Distribuce NT (Kč/kWh)"
+        }
+      },
+      "tariff": {
+        "title": "Nízký a vysoký tarif (HDO)",
+        "description": "HDO senzor: senzor s okny nízkého tarifu (atribut se seznamem start/end, např. ČEZ distribuce) nebo binární senzor (zapnuto = NT). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+        "data": {
+          "hdo_entity": "HDO senzor",
+          "vt_windows": "Časy vysokého tarifu (VT)"
+        }
+      },
+      "car": {
+        "title": "Auto (nepovinné)",
+        "description": "Pro nabíjení do zadaných %: senzor stavu baterie auta, kapacita baterie a účinnost nabíjení (ztráty, obvykle 85–92 %).",
+        "data": {
+          "soc_entity": "Stav baterie auta (%)",
+          "battery_kwh": "Kapacita baterie (kWh)",
+          "charging_efficiency": "Účinnost nabíjení (%)"
+        }
       }
     },
     "error": {
       "cannot_connect": "K EcoVolteru se nepodařilo připojit.",
       "invalid_auth": "Ověření selhalo. Zkontrolujte API tajný klíč.",
-      "unknown": "Při komunikaci s EcoVolterem nastala neočekávaná chyba."
+      "unknown": "Při komunikaci s EcoVolterem nastala neočekávaná chyba.",
+      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00"
     },
     "abort": {
       "already_configured": "Tento EcoVolter je již nakonfigurován."
@@ -95,6 +131,9 @@
       },
       "max_price": {
         "name": "Maximální cena"
+      },
+      "target_soc": {
+        "name": "Nabít do"
       }
     },
     "select": {
@@ -111,7 +150,8 @@
         "name": "Cíl nabíjení",
         "state": {
           "hours": "Hodiny",
-          "energy": "Energie (kWh)"
+          "energy": "Energie (kWh)",
+          "soc": "Baterie (%)"
         }
       },
       "ready_day": {
@@ -138,18 +178,58 @@
     "step": {
       "init": {
         "title": "Možnosti",
-        "description": "Interval obnovy a ceny pro plánovač. Cenový senzor: nechte prázdné pro automatické nalezení (senzor s výslednou cenou [{start, price, tariff}] nebo Czech Energy Spot Prices). Distribuce VT/NT se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0. Časy VT podle HDO, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
+        "description": "Interval obnovy a typ ceny elektřiny.",
         "data": {
           "scan_interval": "Interval obnovy (s)",
+          "price_type": "Typ ceny"
+        }
+      },
+      "price_type": {
+        "title": "Cena elektřiny",
+        "description": "Jak se má počítat cena pro plánovač nabíjení?",
+        "data": {
+          "price_type": "Typ ceny"
+        }
+      },
+      "prices": {
+        "title": "Ceny",
+        "description": "**Senzor:** vyberte senzor ceny (prázdné = automaticky najít senzor s výslednou cenou nebo Czech Energy Spot Prices). Distribuce se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0.\n\n**Pevný dvoutarif:** cena silové elektřiny a distribuce za kWh ve VT a NT vč. DPH. Pro jednotarif zadejte stejné ceny do VT i NT.",
+        "data": {
           "price_entity": "Cenový senzor",
+          "energy_vt": "Silová elektřina VT (Kč/kWh)",
+          "energy_nt": "Silová elektřina NT (Kč/kWh)",
           "distribution_vt": "Distribuce VT (Kč/kWh)",
-          "distribution_nt": "Distribuce NT (Kč/kWh)",
+          "distribution_nt": "Distribuce NT (Kč/kWh)"
+        }
+      },
+      "tariff": {
+        "title": "Nízký a vysoký tarif (HDO)",
+        "description": "HDO senzor: senzor s okny nízkého tarifu (atribut se seznamem start/end, např. ČEZ distribuce) nebo binární senzor (zapnuto = NT). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+        "data": {
+          "hdo_entity": "HDO senzor",
           "vt_windows": "Časy vysokého tarifu (VT)"
+        }
+      },
+      "car": {
+        "title": "Auto (nepovinné)",
+        "description": "Pro nabíjení do zadaných %: senzor stavu baterie auta, kapacita baterie a účinnost nabíjení (ztráty, obvykle 85–92 %).",
+        "data": {
+          "soc_entity": "Stav baterie auta (%)",
+          "battery_kwh": "Kapacita baterie (kWh)",
+          "charging_efficiency": "Účinnost nabíjení (%)"
         }
       }
     },
     "error": {
       "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00"
+    }
+  },
+  "selector": {
+    "price_type": {
+      "options": {
+        "sensor": "Spot / senzor ceny",
+        "fixed": "Pevný dvoutarif (VT / NT)"
+      }
     }
   }
 }

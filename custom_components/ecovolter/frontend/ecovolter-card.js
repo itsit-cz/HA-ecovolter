@@ -45,6 +45,7 @@ const KEY_MAP = {
   "number:target_hours": "target_hours",
   "number:target_energy": "target_energy",
   "number:max_price": "max_price",
+  "number:target_soc": "target_soc",
   "time:ready_by": "ready_by",
   "select:ready_day": "ready_day",
   "button:charge_again": "charge_again",
@@ -76,6 +77,7 @@ const T = {
     limitInfo: "Nabíjí se, kdykoli je cena pod limitem.", chargingNow: "nabíjí se podle plánu", waiting: "čeká na levný úsek",
     vt: "VT", currency: "Kč", est: "odhad", until: "do",
     days: { today: "Dnes", tomorrow: "Zítra", day_after: "Pozítří" },
+    car: "Auto", noSoc: "Chybí stav baterie auta – nastavte senzor a kapacitu baterie v Možnostech integrace (krok Auto)",
     chargeAgain: "Nabít znovu", doneHint: "Po odpojení a připojení auta se nabíjení samo nespustí.",
     awaitPrices: "část plánu po {t} je odhad – upřesní se po zveřejnění cen na další den (kolem 14:00)",
   },
@@ -98,6 +100,7 @@ const T = {
     limitInfo: "Charges whenever the price is below the limit.", chargingNow: "charging as planned", waiting: "waiting for a cheap slot",
     vt: "VT", currency: "CZK", est: "estimate", until: "by",
     days: { today: "Today", tomorrow: "Tomorrow", day_after: "Day after" },
+    car: "Car", noSoc: "Car battery level missing – set the sensor and battery capacity in the integration options (Car step)",
     chargeAgain: "Charge again", doneHint: "Re-plugging the car will not start charging on its own.",
     awaitPrices: "part of the plan after {t} is an estimate – refined when tomorrow's prices are published (around 14:00)",
   },
@@ -404,9 +407,10 @@ class EcoVolterCard extends HTMLElement {
       <div class="sched-head"><b>${esc(t.scheduler)}</b><span id="priceNow"></span></div>
       <div class="modes">${MODES.map((m) => `<button data-mode="${m}">${esc(t.modes[m])}</button>`).join("")}</div>
       <div class="params" id="params">
-        <div class="param" id="pTarget"><div class="seg"><button data-tt="hours">${esc(t.hours)}</button><button data-tt="energy">${esc(t.kwh)}</button></div>
+        <div class="param" id="pTarget"><div class="seg"><button data-tt="hours">${esc(t.hours)}</button><button data-tt="energy">${esc(t.kwh)}</button><button data-tt="soc">%</button></div>
           <span id="tgtHoursWrap">${field("tgtHours", "h", "0.25", 0, 24)}</span>
-          <span id="tgtEnergyWrap">${field("tgtEnergy", "kWh", "1", 0, 150)}</span></div>
+          <span id="tgtEnergyWrap">${field("tgtEnergy", "kWh", "1", 0, 150)}</span>
+          <span id="tgtSocWrap">${field("tgtSoc", "%", "1", 10, 100)}</span></div>
         <div class="param" id="pReady"><small>${esc(t.readyBy)}</small><div class="field time-field"><select id="readyD" class="day">${["today", "tomorrow", "day_after"].map((d) => `<option value="${d}">${esc(t.days[d])}</option>`).join("")}</select><select id="readyH" aria-label="hod">${Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, "0")}</option>`).join("")}</select><b>:</b><select id="readyM" aria-label="min">${[0, 15, 30, 45].map((m) => `<option value="${m}">${String(m).padStart(2, "0")}</option>`).join("")}</select></div></div>
         <div class="param" id="pMax"><small>${esc(t.maxPrice)}</small>${field("maxPrice", t.currency + "/kWh", "0.1", 0, 30).replace("<input ", `<input placeholder="${esc(t.noLimit)}" `)}</div>
       </div>
@@ -433,6 +437,7 @@ class EcoVolterCard extends HTMLElement {
     };
     bindNum("tgtHours", "target_hours");
     bindNum("tgtEnergy", "target_energy");
+    bindNum("tgtSoc", "target_soc");
     bindNum("maxPrice", "max_price");
     // Native <select>s instead of <input type=time>: one value per choice (no
     // half-typed times sent to HA) and reliable pickers in the Companion app.
@@ -479,6 +484,8 @@ class EcoVolterCard extends HTMLElement {
     root.getElementById("pReady").hidden = mode !== "cheapest";
     root.getElementById("tgtHoursWrap").hidden = tt !== "hours";
     root.getElementById("tgtEnergyWrap").hidden = tt !== "energy";
+    root.getElementById("tgtSocWrap").hidden = tt !== "soc";
+    root.querySelector("[data-tt=soc]").hidden = !this._s("target_soc");
 
     const syncNum = (id, key) => {
       const el = root.getElementById(id), s = this._s(key);
@@ -489,6 +496,7 @@ class EcoVolterCard extends HTMLElement {
     };
     syncNum("tgtHours", "target_hours");
     syncNum("tgtEnergy", "target_energy");
+    syncNum("tgtSoc", "target_soc");
     syncNum("maxPrice", "max_price");
     const rdS = this._s("ready_day"), rd = root.getElementById("readyD");
     rd.hidden = !rdS;
@@ -520,6 +528,7 @@ class EcoVolterCard extends HTMLElement {
     else if (mode === "low_tariff") txt = t.lowTariffInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
     else if (!slots.length) { txt = t.noPrices; warn = true; }
     else if (mode === "price_limit") txt = t.limitInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
+    else if (plan.reason === "no_soc") { txt = `⚠ ${t.noSoc}`; warn = true; }
     else if (plan.reason === "target_reached" || plan.finished) txt = `✅ ${t.reached} · ${t.charged} ${fmtDur(plan.delivered_minutes)}` + (plan.delivered_kwh ? ` / ${plan.delivered_kwh} kWh` : "") + `\n${t.doneHint}`;
     else {
       const startS = this._s("charging_plan");
@@ -535,7 +544,8 @@ class EcoVolterCard extends HTMLElement {
       if (this._s("scheduled_now")?.state === "on") txt += ` · ${t.chargingNow}`;
       else if (start) txt += ` · ${t.start} ${hhmm(start)}`;
       if (plan.estimated_cost) txt += ` · ${t.estimate} ${Math.round(plan.estimated_cost)} ${t.currency}`;
-      if (plan.delivered_minutes) txt += ` · ${t.charged} ${fmtDur(plan.delivered_minutes)}`;
+      if (plan.delivered_minutes && tt !== "soc") txt += ` · ${t.charged} ${fmtDur(plan.delivered_minutes)}`;
+      if (tt === "soc" && plan.soc != null) txt += `\n🔋 ${t.car} ${Math.round(plan.soc)} % → ${Math.round(plan.target_soc)} %` + (plan.needed_kwh ? ` (${plan.needed_kwh} kWh)` : "");
       if (plan.waiting_for_prices && plan.prices_until) txt += `\nℹ ${t.awaitPrices.replace("{t}", hhmm(new Date(plan.prices_until)))}`;
     }
     set(status, txt);

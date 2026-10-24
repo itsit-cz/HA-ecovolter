@@ -213,8 +213,8 @@ async def test_setup_entities_and_options(hass: HomeAssistant) -> None:
         reg = er.async_get(hass)
         entries = er.async_entries_for_config_entry(reg, entry.entry_id)
         states = [hass.states.get(e.entity_id) for e in entries]
-        # 18 charger entities + 11 scheduler entities
-        assert len(states) == 29
+        # 18 charger entities + 12 scheduler entities
+        assert len(states) == 30
         # without a price sensor only the total price is unavailable
         assert [
             e.translation_key
@@ -235,8 +235,16 @@ async def test_setup_entities_and_options(hass: HomeAssistant) -> None:
         assert entry.runtime_data.update_interval == timedelta(seconds=2)
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 5}
+            result["flow_id"], {CONF_SCAN_INTERVAL: 5, "price_type": "sensor"}
         )
+        assert result["step_id"] == "prices"
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"distribution_vt": 0, "distribution_nt": 0}
+        )
+        assert result["step_id"] == "tariff"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"vt_windows": ""})
+        assert result["step_id"] == "car"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
         await hass.async_block_till_done()
         assert entry.options[CONF_SCAN_INTERVAL] == 5
         assert entry.runtime_data.update_interval == timedelta(seconds=5)
