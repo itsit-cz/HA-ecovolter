@@ -110,7 +110,12 @@ Při přidání integrace se po připojení k nabíječce zobrazí průvodce. Po
 
 **3. Nízký a vysoký tarif (HDO)**
 
-- **HDO senzor:** senzor s okny nízkého tarifu, tedy atributem se seznamem `start`/`end` (např. `next_windows` z integrace ČEZ distribuce), nebo binární senzor (zapnuto = NT). Za koncem známých oken se opakuje vzor posledního dne.
+- **HDO senzor:** odkud se berou časy nízkého tarifu (NT). Podporováno:
+  - **ČEZ HDO – „Surová data“** (např. `sensor.cez_hdo_raw_data_…`): rozvrh NT na 7 dní dopředu z atributu `raw_json` (pole `datum` + `casy`). **Doporučeno pro ČEZ.**
+  - senzor se seznamem oken `start`/`end` (např. `next_windows`),
+  - binární senzor *Nízký tarif aktivní* (zapnuto = NT) – zná jen aktuální stav, budoucnost bere z časů VT.
+
+  Za koncem známého rozvrhu se opakuje vzor posledního dne.
 - **Časy VT:** ruční záloha, např. `8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00`.
 
 Tarif se používá u pevného dvoutarifu, v režimu *Jen NT* a u senzorů bez pole `tariff`.

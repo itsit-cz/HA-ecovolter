@@ -29,7 +29,7 @@
       },
       "tariff": {
         "title": "Low and high tariff (HDO)",
-        "description": "HDO sensor: a sensor with low-tariff windows (list attribute with start/end, e.g. ČEZ distribuce) or a binary sensor (on = NT). VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
+        "description": "HDO sensor: for ČEZ choose the \"Raw data\" sensor (7-day NT schedule). A sensor with a start/end window list or a \"low tariff active\" binary sensor (on = NT, current state only) also works. VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
         "data": {
           "hdo_entity": "HDO sensor",
           "vt_windows": "High tariff (VT) windows"
@@ -204,7 +204,7 @@
       },
       "tariff": {
         "title": "Low and high tariff (HDO)",
-        "description": "HDO sensor: a sensor with low-tariff windows (list attribute with start/end, e.g. ČEZ distribuce) or a binary sensor (on = NT). VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
+        "description": "HDO sensor: for ČEZ choose the \"Raw data\" sensor (7-day NT schedule). A sensor with a start/end window list or a \"low tariff active\" binary sensor (on = NT, current state only) also works. VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
         "data": {
           "hdo_entity": "HDO sensor",
           "vt_windows": "High tariff (VT) windows"

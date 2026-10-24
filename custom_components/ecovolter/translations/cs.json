@@ -29,7 +29,7 @@
       },
       "tariff": {
         "title": "Nízký a vysoký tarif (HDO)",
-        "description": "HDO senzor: senzor s okny nízkého tarifu (atribut se seznamem start/end, např. ČEZ distribuce) nebo binární senzor (zapnuto = NT). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+        "description": "HDO senzor: pro ČEZ vyberte senzor „Surová data“ (rozvrh NT na 7 dní). Podporován je i senzor se seznamem oken start/end nebo binární senzor „Nízký tarif aktivní“ (zapnuto = NT, zná jen aktuální stav). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
         "data": {
           "hdo_entity": "HDO senzor",
           "vt_windows": "Časy vysokého tarifu (VT)"
@@ -204,7 +204,7 @@
       },
       "tariff": {
         "title": "Nízký a vysoký tarif (HDO)",
-        "description": "HDO senzor: senzor s okny nízkého tarifu (atribut se seznamem start/end, např. ČEZ distribuce) nebo binární senzor (zapnuto = NT). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+        "description": "HDO senzor: pro ČEZ vyberte senzor „Surová data“ (rozvrh NT na 7 dní). Podporován je i senzor se seznamem oken start/end nebo binární senzor „Nízký tarif aktivní“ (zapnuto = NT, zná jen aktuální stav). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
         "data": {
           "hdo_entity": "HDO senzor",
           "vt_windows": "Časy vysokého tarifu (VT)"

@@ -190,14 +190,71 @@ def _low(moment: datetime, tariff: Any) -> bool:
     return not is_vt(moment, tariff or [])
 
 
+def _find_cez_signals(value: Any, depth: int = 0) -> list[dict[str, Any]]:
+    """Find ČEZ distribuce day entries {datum: 'D.M.YYYY', casy: 'HH:MM-HH:MM; …'} anywhere."""
+    if depth > 8:
+        return []
+    if isinstance(value, dict):
+        if "datum" in value and "casy" in value:
+            return [value]
+        found: list[dict[str, Any]] = []
+        for item in value.values():
+            found += _find_cez_signals(item, depth + 1)
+        return found
+    if isinstance(value, list):
+        found = []
+        for item in value:
+            found += _find_cez_signals(item, depth + 1)
+        return found
+    return []
+
+
+def _cez_windows(entries: list[dict[str, Any]]) -> list[tuple[datetime, datetime]]:
+    """NT windows from ČEZ day entries ('casy' lists the low-tariff times)."""
+    tz = dt_util.get_default_time_zone()
+    # several HDO signals may be listed – use the first one
+    signal = entries[0].get("signal")
+    windows: list[tuple[datetime, datetime]] = []
+    for entry in entries:
+        if entry.get("signal") != signal:
+            continue
+        try:
+            day = datetime.strptime(str(entry["datum"]).strip(), "%d.%m.%Y").date()
+        except ValueError:
+            continue
+        for part in re.split(r"[;,]", str(entry.get("casy") or "")):
+            m = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*", part)
+            if not m:
+                continue
+            h1, m1, h2, m2 = (int(x) for x in m.groups())
+            start = datetime.combine(day, dtime(h1 % 24, m1), tzinfo=tz)
+            end_day = day + timedelta(days=1) if (h2, m2) == (24, 0) or (h2, m2) <= (h1, m1) else day
+            end = datetime.combine(end_day, dtime(h2 % 24, m2), tzinfo=tz)
+            if end > start:
+                windows.append((start, end))
+    windows.sort()
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in windows:  # 20:00-24:00 + 00:00-08:00 -> one window
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
 def parse_hdo_windows(state: State | None) -> list[tuple[datetime, datetime]]:
     """Low-tariff (NT) windows from an HDO sensor.
 
-    Accepts any list attribute of {start, end} items (ISO datetimes), e.g. the
-    `next_windows` attribute of the ČEZ distribuce HDO sensor.
+    Supported formats:
+    - ČEZ distribuce raw data: day entries {datum, casy} (e.g. the "Surová data"
+      sensor of the ČEZ HDO integration), 'casy' = low-tariff times;
+    - any list attribute of {start, end} items (ISO datetimes), e.g. `next_windows`.
     """
     if state is None:
         return []
+    cez = _find_cez_signals(dict(state.attributes))
+    if cez:
+        return _cez_windows(cez)
     windows: list[tuple[datetime, datetime]] = []
     for value in state.attributes.values():
         if not (isinstance(value, list) and value and isinstance(value[0], dict)):

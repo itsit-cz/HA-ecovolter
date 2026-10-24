@@ -574,3 +574,33 @@ async def test_config_flow_asks_for_prices(hass: HomeAssistant) -> None:
         assert result["type"] == "create_entry"
         assert result["title"] == "EcoVolter XYZ"
         assert result["options"]["price_type"] == "fixed" and result["options"]["energy_vt"] == 4
+
+
+def test_cez_raw_hdo_schedule() -> None:
+    from custom_components.ecovolter.scheduler import TariffModel, parse_hdo_windows
+
+    casy = "00:00-08:00;   09:00-12:00;   13:00-15:00;   16:00-19:00;   20:00-24:00"
+    days = ["24.10.2026", "25.10.2026", "26.10.2026"]
+    state = State(
+        "sensor.cez_hdo_raw_data_8452_evv2",
+        "ok",
+        {
+            "raw_json": {
+                "timestamp": "2026-10-24T04:58:28+02:00",
+                "data": {"data": {"signals": [{"signal": "EVV2", "den": "x", "datum": d, "casy": casy} for d in days], "amm": False}},
+            },
+            "friendly_name": "ČEZ HDO (EVV2) Surová data",
+        },
+    )
+    windows = parse_hdo_windows(state)
+    tz = dt_util.get_default_time_zone()
+    d = datetime(2026, 10, 24, tzinfo=tz)
+    # 20:00-24:00 and next day's 00:00-08:00 are merged
+    assert (d.replace(hour=20), d.replace(day=25, hour=8)) in windows
+    assert windows[0] == (d, d.replace(hour=8))
+    tariff = TariffModel([], windows)
+    nt = lambda h, m=0, day=24: tariff(d.replace(day=day, hour=h, minute=m))  # noqa: E731
+    assert nt(13, 30) and nt(23) and nt(2, day=25)
+    assert not nt(8, 15) and not nt(12, 30) and not nt(15, 45) and not nt(19, 30)
+    # after the published days the last day's pattern repeats
+    assert not nt(8, 30, day=28) and nt(10, day=28)

@@ -13,7 +13,7 @@ Charging scheduler.
 - Charged time/energy is tracked per cycle; settings and progress survive restarts.
 - New entities: charging mode, charging target, hours, energy, max price, ready by, next planned charging (with full plan), electricity price incl. distribution, scheduled charging now.
 - Price type chosen during setup: spot / price sensor or fixed two-rate tariff (energy + distribution VT/NT). Setup and options are a guided multi-step flow.
-- HDO: low-tariff windows from an HDO sensor (list of start/end, e.g. ČEZ distribuce `next_windows`) or a binary sensor; VT times as fallback.
+- HDO: low-tariff schedule from the ČEZ HDO raw data sensor (`datum` + `casy`, 7 days ahead), a sensor with a start/end window list, or a binary sensor; VT times as fallback.
 - Charging target in % of the car battery (car SoC sensor, battery capacity, charging efficiency); stops as soon as the target % is reached.
 - Any change of the plan (mode, target, deadline, max price) takes control immediately – overrides a manual change and the command rate limit.
 - Target reached = done: no new charging after unplug/replug or past the deadline until a new target/deadline/mode is set or "Charge again" is pressed (new button entity, button in the card).
