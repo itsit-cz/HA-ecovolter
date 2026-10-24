@@ -59,6 +59,8 @@ class PriceSlot:
     spot: float  # per kWh
     distribution: float  # per kWh
     low_tariff: bool
+    # No published price yet (e.g. tomorrow before ~14:00) – price is a guess.
+    estimated: bool = False
 
     @property
     def price(self) -> float:
@@ -73,6 +75,11 @@ class Plan:
     planned_seconds: float = 0.0
     estimated_cost: float = 0.0
     deadline: datetime | None = None
+    prices_until: datetime | None = None  # end of published prices
+
+    @property
+    def waiting_for_prices(self) -> bool:
+        return any(s.estimated and s.start in self.selected for s in self.slots)
 
     @property
     def complete(self) -> bool:
@@ -108,6 +115,61 @@ def is_vt(moment: datetime, windows: list[tuple[dtime, dtime]]) -> bool:
     return False
 
 
+def price_list_attribute(state: State | None) -> list[dict[str, Any]] | None:
+    """Return a list attribute like [{start, price, tariff…}, …] if the sensor has one."""
+    if state is None:
+        return None
+    for value in state.attributes.values():
+        if (
+            isinstance(value, list)
+            and value
+            and isinstance(value[0], dict)
+            and "start" in value[0]
+            and "price" in value[0]
+        ):
+            return value
+    return None
+
+
+def _slots_from_list(
+    items: list[dict[str, Any]], factor: float, vt_windows: list[tuple[dtime, dtime]]
+) -> list[PriceSlot]:
+    """Final prices (already incl. VAT and distribution) – no distribution is added."""
+    points: list[tuple[datetime, float, bool, datetime | None]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        start = item.get("start")
+        start = dt_util.parse_datetime(start) if isinstance(start, str) else start
+        if not isinstance(start, datetime):
+            continue
+        try:
+            price = float(item["price"]) * factor
+        except (KeyError, TypeError, ValueError):
+            continue
+        end = item.get("end")
+        end = dt_util.parse_datetime(end) if isinstance(end, str) else end
+        tariff = str(item.get("tariff") or "").upper()
+        low = tariff != "VT" if tariff in ("VT", "NT") else not is_vt(dt_util.as_local(start), vt_windows)
+        points.append(
+            (dt_util.as_local(start), price, low, dt_util.as_local(end) if isinstance(end, datetime) else None)
+        )
+    points.sort(key=lambda p: p[0])
+    default = _default_step([p[0] for p in points])
+    slots = []
+    for i, (start, price, low, end) in enumerate(points):
+        if end is None:
+            end = points[i + 1][0] if i + 1 < len(points) else start + default
+            end = min(end, start + default)
+        slots.append(PriceSlot(start=start, end=end, spot=price, distribution=0.0, low_tariff=low))
+    return slots
+
+
+def _default_step(starts: list[datetime]) -> timedelta:
+    gaps = [b - a for a, b in zip(starts, starts[1:]) if b > a]
+    return min(gaps) if gaps else timedelta(hours=1)
+
+
 def parse_prices(
     state: State | None,
     *,
@@ -115,11 +177,21 @@ def parse_prices(
     dist_nt: float = 0.0,
     vt_windows: list[tuple[dtime, dtime]] | None = None,
 ) -> list[PriceSlot]:
-    """Read slots from a Czech Energy Spot Prices sensor (attributes = ISO time → price)."""
+    """Read price slots from a sensor.
+
+    Two formats are supported:
+    - a list attribute [{start, price, tariff?, end?}, …] with the *final* price
+      (incl. VAT and distribution) – distribution settings are ignored;
+    - Czech Energy Spot Prices: attributes "ISO time" → spot price, to which the
+      configured VT/NT distribution is added.
+    """
     if state is None:
         return []
     unit = str(state.attributes.get("unit_of_measurement") or "")
     factor = 0.001 if "MWh" in unit else 1.0
+    items = price_list_attribute(state)
+    if items is not None:
+        return _slots_from_list(items, factor, vt_windows or [])
     points: list[tuple[datetime, float]] = []
     for key, value in state.attributes.items():
         if not isinstance(key, str) or not key[:1].isdigit():
@@ -152,6 +224,39 @@ def parse_prices(
             )
         )
     return slots
+
+
+def extend_with_estimate(
+    slots: list[PriceSlot],
+    deadline: datetime,
+    vt_windows: list[tuple[dtime, dtime]] | None = None,
+    dist_vt: float = 0.0,
+    dist_nt: float = 0.0,
+) -> list[PriceSlot]:
+    """Fill the time between the last published price and the deadline with estimates.
+
+    Day-ahead prices for tomorrow are published around 14:00. Without this,
+    a plan made in the morning for "ready by 7:00 tomorrow" would only see today
+    and charge in today's slots even if the night turns out much cheaper. With an
+    estimate (average of the known prices), only slots that are cheaper than an
+    average night are used now; the rest waits for the real prices.
+    """
+    if not slots or slots[-1].end >= deadline:
+        return slots
+    step = _default_step([s.start for s in slots])
+    recent = [s for s in slots if s.start >= slots[-1].end - timedelta(hours=24)]
+    avg_spot = sum(s.spot for s in recent) / len(recent)
+    has_distribution = any(s.distribution for s in slots)
+    out = list(slots)
+    start = slots[-1].end
+    while start < deadline:
+        low = not is_vt(start, vt_windows or [])
+        dist = (dist_nt if low else dist_vt) if has_distribution else 0.0
+        out.append(
+            PriceSlot(start=start, end=start + step, spot=avg_spot, distribution=dist, low_tariff=low, estimated=True)
+        )
+        start += step
+    return out
 
 
 def next_deadline(now: datetime, ready_by: dtime) -> datetime:
@@ -260,6 +365,8 @@ class EcoVolterScheduler:
         self._last_command: float = 0.0
         self._commanded: bool | None = None
         self._override_desired: bool | None = None
+        self._detect_at = -1e9
+        self._detected: str | None = None
 
     # ---- persistence
 
@@ -350,6 +457,20 @@ class EcoVolterScheduler:
     def resolve_price_entity(self) -> str | None:
         if self.price_entity:
             return self.price_entity
+        # A sensor with a list of final prices ([{start, price, …}]) wins.
+        now = monotonic.monotonic()
+        if now - self._detect_at > 300:
+            self._detect_at = now
+            self._detected = next(
+                (
+                    st.entity_id
+                    for st in self.hass.states.async_all("sensor")
+                    if price_list_attribute(st) is not None
+                ),
+                None,
+            )
+        if self._detected and self.hass.states.get(self._detected) is not None:
+            return self._detected
         for entity_id in AUTO_PRICE_ENTITIES:
             if self.hass.states.get(entity_id) is not None:
                 return entity_id
@@ -379,10 +500,15 @@ class EcoVolterScheduler:
         self.slots = parse_prices(
             state, dist_vt=self.dist_vt, dist_nt=self.dist_nt, vt_windows=self.vt_windows
         )
+        prices_until = self.slots[-1].end if self.slots else None
+        horizon = extend_with_estimate(
+            self.slots, deadline, self.vt_windows, self.dist_vt, self.dist_nt
+        ) if self.slots and self.slots[-1].end > now else self.slots
         max_price = float(self.config["max_price"] or 0) or None
         self.plan = build_plan(
-            self.slots, now, deadline, self.needed_seconds(), self._power_kw(), max_price
+            horizon, now, deadline, self.needed_seconds(), self._power_kw(), max_price
         )
+        self.plan.prices_until = prices_until
         current = slot_at(self.slots, now)
         mode = self.mode
 
@@ -490,9 +616,11 @@ class EcoVolterScheduler:
             "delivered_minutes": round(self.delivered_seconds / 60),
             "delivered_kwh": round(self.delivered_kwh, 2),
             "estimated_cost": round(self.plan.estimated_cost, 2),
+            "prices_until": self.plan.prices_until.isoformat() if self.plan.prices_until else None,
+            "waiting_for_prices": self.plan.waiting_for_prices,
             "max_price": float(self.config["max_price"] or 0),
             "slots": [
-                [s.start.isoformat(), round(s.price, 3), 1 if s.start in self.plan.selected else 0, 0 if s.low_tariff else 1]
+                [s.start.isoformat(), round(s.price, 3), 1 if s.start in self.plan.selected else 0, 0 if s.low_tariff else 1, 1 if s.estimated else 0]
                 for s in horizon
             ],
         }

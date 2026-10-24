@@ -247,3 +247,84 @@ async def test_energy_target_and_options(hass: HomeAssistant, freezer) -> None:
         await hass.async_block_till_done()
         for p in patches:
             p.stop()
+
+
+# ------------------------------------------------- final-price list sensor
+
+
+def _final_state(start: datetime, prices: list[float], tariffs=None, step_min=15):
+    items = []
+    for i, price in enumerate(prices):
+        items.append(
+            {
+                "start": (start + timedelta(minutes=step_min * i)).isoformat(),
+                "price": price,
+                "spot": price - 1.3,
+                "tariff": (tariffs or ["NT"] * len(prices))[i],
+                "regulated": 0.1165,
+            }
+        )
+    return State(
+        "sensor.elektrina_vysledna_cena",
+        str(prices[0]),
+        {"prices": items, "unit_of_measurement": "Kč/kWh", "device_class": "monetary"},
+    )
+
+
+def test_final_price_list_ignores_distribution() -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 30, tzinfo=tz)
+    state = _final_state(start, [4.9269, 4.3051, 4.7002], ["NT", "VT", "NT"])
+    slots = parse_prices(state, dist_vt=2, dist_nt=0.5, vt_windows=parse_vt_windows("20:00-21:00"))
+    assert [s.price for s in slots] == [4.9269, 4.3051, 4.7002]
+    assert [s.low_tariff for s in slots] == [True, False, True]  # from "tariff", not the windows
+    assert slots[0].end - slots[0].start == timedelta(minutes=15)
+
+
+def test_tomorrow_unknown_waits_for_published_prices() -> None:
+    from custom_components.ecovolter.scheduler import extend_with_estimate
+
+    tz = dt_util.get_default_time_zone()
+    day = datetime(2026, 10, 24, 0, 0, tzinfo=tz)
+    # today's prices, hourly: 4 Kč most of the day, one cheap hour at 10:00
+    prices = [4.0] * 24
+    prices[10] = 2.0
+    slots = parse_prices(_final_state(day, prices, step_min=60))
+    now = day.replace(hour=9, minute=30)  # before tomorrow's prices (~14:00)
+    deadline = day + timedelta(days=1, hours=7)
+    horizon = extend_with_estimate(slots, deadline)
+    assert horizon[-1].estimated and horizon[-1].end == deadline
+    plan = build_plan(horizon, now, deadline, needed_seconds=3 * 3600, power_kw=11)
+    real = sorted(s for s in plan.selected if s < day + timedelta(days=1))
+    # only the cheap hour today is used; the rest waits for the night prices
+    assert real == [day.replace(hour=10)]
+    assert plan.complete
+    est = {s.start for s in horizon if s.estimated}
+    assert len(plan.selected & est) == 2
+
+
+async def test_auto_detects_final_price_sensor(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 0, tzinfo=tz)
+    freezer.move_to(start)
+    st = _final_state(start, [5.6, 4.9, 4.3, 4.7, 3.9, 3.2, 3.0, 3.3])
+    hass.states.async_set(st.entity_id, st.state, st.attributes)
+    hass.states.async_set(SPOT, "1", _prices_state(start, [1, 1]).attributes)  # must be ignored
+    entry, status, settings, pm, ids, patches = await _setup(hass, options={"distribution_vt": 2, "distribution_nt": 2})
+    sched = entry.runtime_data.scheduler
+    try:
+        assert sched.resolve_price_entity() == "sensor.elektrina_vysledna_cena"
+        assert sched.current_price == 5.6  # no distribution added
+        sched.set_option("ready_by", "21:00")
+        sched.set_option("target_hours", 0.5)
+        sched.set_option("mode", "cheapest")
+        await hass.async_block_till_done()
+        assert sorted(sched.plan.selected) == [start + timedelta(minutes=30), start + timedelta(minutes=45)]
+        attrs = hass.states.get(ids["charging_plan"]).attributes
+        assert attrs["waiting_for_prices"] is False
+        assert len(attrs["slots"][0]) == 5
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()
