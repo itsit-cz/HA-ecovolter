@@ -171,7 +171,8 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
 .seg{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--divider-color)}
 .seg button{flex:1;border-radius:0;padding:0;font-size:11px;height:100%}
 .field{display:flex;align-items:center;height:38px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);padding:0 8px;gap:4px}
-.field input[type=time]{font-size:14px;text-align:left}
+.time-field{justify-content:center;gap:2px}
+.time-field select{appearance:none;-webkit-appearance:none;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;font-size:16px;padding:0 2px;text-align:center;cursor:pointer;min-width:0}
 .field input::placeholder{font-weight:400;opacity:.6;font-size:12px}
 .param>small,.param>.seg{height:22px;box-sizing:border-box;display:flex;align-items:center}
 .field{overflow:hidden;box-sizing:border-box;width:100%}
@@ -395,7 +396,7 @@ class EcoVolterCard extends HTMLElement {
         <div class="param" id="pTarget"><div class="seg"><button data-tt="hours">${esc(t.hours)}</button><button data-tt="energy">${esc(t.kwh)}</button></div>
           <span id="tgtHoursWrap">${field("tgtHours", "h", "0.25", 0, 24)}</span>
           <span id="tgtEnergyWrap">${field("tgtEnergy", "kWh", "1", 0, 150)}</span></div>
-        <div class="param" id="pReady"><small>${esc(t.readyBy)}</small><label class="field"><input id="readyBy" type="time" step="900"></label></div>
+        <div class="param" id="pReady"><small>${esc(t.readyBy)}</small><div class="field time-field"><select id="readyH" aria-label="hod">${Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, "0")}</option>`).join("")}</select><b>:</b><select id="readyM" aria-label="min">${[0, 15, 30, 45].map((m) => `<option value="${m}">${String(m).padStart(2, "0")}</option>`).join("")}</select></div></div>
         <div class="param" id="pMax"><small>${esc(t.maxPrice)}</small>${field("maxPrice", t.currency + "/kWh", "0.1", 0, 30).replace("<input ", `<input placeholder="${esc(t.noLimit)}" `)}</div>
       </div>
       <div class="sched-status" id="schedStatus"></div>
@@ -421,10 +422,15 @@ class EcoVolterCard extends HTMLElement {
     bindNum("tgtHours", "target_hours");
     bindNum("tgtEnergy", "target_energy");
     bindNum("maxPrice", "max_price");
-    const ready = root.getElementById("readyBy");
-    ready.addEventListener("focus", () => { this._editingField = "readyBy"; });
-    ready.addEventListener("change", () => this._setTime(ready.value));
-    ready.addEventListener("blur", () => { this._editingField = null; this._update(); });
+    // Native <select>s instead of <input type=time>: one value per choice (no
+    // half-typed times sent to HA) and reliable pickers in the Companion app.
+    const rh = root.getElementById("readyH"), rm = root.getElementById("readyM");
+    const commit = () => this._setTime(`${String(rh.value).padStart(2, "0")}:${String(rm.value).padStart(2, "0")}`);
+    for (const sel of [rh, rm]) {
+      sel.addEventListener("focus", () => { this._editingField = "readyBy"; });
+      sel.addEventListener("change", () => { this._editingField = null; commit(); });
+      sel.addEventListener("blur", () => { this._editingField = null; });
+    }
     const tl = root.getElementById("timeline");
     const info = (e) => {
       const bar = e.target.closest?.(".bar");
@@ -464,10 +470,16 @@ class EcoVolterCard extends HTMLElement {
     syncNum("tgtHours", "target_hours");
     syncNum("tgtEnergy", "target_energy");
     syncNum("maxPrice", "max_price");
-    const ready = root.getElementById("readyBy"), rs = this._s("ready_by");
+    const rs = this._s("ready_by");
     if (this._editingField !== "readyBy" && !isBad(rs)) {
-      const v = String(this._effective("ready_by", rs.state.slice(0, 5)));
-      if (ready.value !== v) ready.value = v;
+      const [hh, mm] = String(this._effective("ready_by", rs.state.slice(0, 5))).split(":").map(Number);
+      const rh = root.getElementById("readyH"), rm = root.getElementById("readyM");
+      // minutes set elsewhere (e.g. 06:20 from an automation) are shown as an extra option
+      if (Number.isFinite(mm) && ![...rm.options].some((o) => Number(o.value) === mm)) {
+        rm.add(new Option(String(mm).padStart(2, "0"), String(mm)));
+      }
+      if (Number.isFinite(hh) && rh.value !== String(hh)) rh.value = String(hh);
+      if (Number.isFinite(mm) && rm.value !== String(mm)) rm.value = String(mm);
     }
 
     const priceS = this._s("current_total_price");
@@ -552,6 +564,7 @@ class EcoVolterCard extends HTMLElement {
     const s = this._s("ready_by");
     if (!s || !/^\d{2}:\d{2}/.test(value || "")) return;
     const hm = value.slice(0, 5);
+    if (hm === String(s.state).slice(0, 5)) return;
     this._setPending("ready_by", hm);
     this._call("time", "set_value", { entity_id: s.entity_id, time: hm + ":00" }, "ready_by");
   }
