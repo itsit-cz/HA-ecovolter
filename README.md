@@ -80,55 +80,66 @@ Konkrétní ID entit závisí na názvu zařízení vytvořeném v Home Assistan
 
 Plánovač sám zapíná a vypíná nabíjení podle ceny elektřiny. Je součástí integrace, takže běží i bez otevřeného dashboardu a přežije restart Home Assistantu. Po instalaci je v režimu **Ručně**, takže nic nepřepíná, dokud ho nezapnete.
 
-### Krok 1: Ceny elektřiny
+### Krok 1: Nastavení cen (při přidání integrace nebo v Možnostech)
 
-Plánovač umí dva typy cenového senzoru:
+Při přidání integrace se po připojení k nabíječce zobrazí průvodce. Později ho otevřete přes **Nastavení → Zařízení a služby → EcoVolter → ⚙ Konfigurovat**.
 
-**A) Vlastní senzor s výslednou cenou (doporučeno).** Senzor má atribut se seznamem úseků, kde `price` je konečná cena za kWh včetně DPH a distribuce, `tariff` (`VT`/`NT`) je volitelný a ostatní pole se ignorují:
+**1. Typ ceny**
 
-```yaml
-prices:
-  - start: '2026-10-24T21:00:00+02:00'
-    price: 4.7002
-    tariff: NT
-  - start: '2026-10-24T21:15:00+02:00'
-    price: 3.878
-    tariff: NT
-```
+| Typ | Kdy použít |
+|---|---|
+| **Spot / senzor ceny** | spotový tarif – cena se čte ze senzoru v HA |
+| **Pevný dvoutarif (VT / NT)** | klasický tarif s pevnou cenou; pro jednotarif zadejte stejné ceny do VT i NT |
 
-Takový senzor plánovač najde sám. Distribuce z kroku 2 se k němu **nepřičítá**, cena se použije tak, jak je.
+**2. Ceny**
 
-**B) [Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices).** Použije se `sensor.current_buy_electricity_price(_15min)`, případně `sensor.current_spot_electricity_price(_15min)`. K ceně se přičte distribuce z kroku 2.
+*Spot / senzor ceny:* vyberte cenový senzor, nebo nechte prázdné pro automatické nalezení. Podporované senzory:
 
-Konkrétní senzor lze vybrat v kroku 2 (pole *Cenový senzor*).
+- **Senzor s výslednou cenou (doporučeno):** atribut se seznamem úseků, kde `price` je konečná cena za kWh vč. DPH a distribuce a `tariff` (`VT`/`NT`) je nepovinný. Distribuci nechte 0.
 
-**Ceny na další den** se zveřejňují kolem 14:00, do té doby jsou známé jen do půlnoci. Pokud termín *Hotovo do* leží za koncem známých cen, plánovač neznámou část odhadne (průměr posledních cen). Nyní nabije jen úseky, které jsou levnější než odhad, a zbytek naplánuje po zveřejnění cen. Odhadované úseky jsou v kartě na ose šrafované.
+  ```yaml
+  prices:
+    - start: '2026-10-24T21:00:00+02:00'
+      price: 4.7002
+      tariff: NT
+  ```
 
-### Krok 2: Distribuce a vysoký tarif
+- **[Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices):** spotová cena, ke které se přičte distribuce VT/NT.
 
-**Nastavení → Zařízení a služby → EcoVolter → ⚙ Konfigurovat** a vyplňte:
+*Pevný dvoutarif:* cena silové elektřiny VT a NT a distribuce VT a NT, vše za kWh vč. DPH.
 
-| Pole | Co zadat | Příklad |
-|---|---|---|
-| Cenový senzor | nechte prázdné (automaticky) | |
-| Distribuce VT (Kč/kWh) – jen pro senzor typu B | cena distribuce ve vysokém tarifu za kWh vč. DPH, podle ceníku distributora | `2,10` |
-| Distribuce NT (Kč/kWh) – jen pro senzor typu B | totéž pro nízký tarif | `0,25` |
-| Časy vysokého tarifu (VT) | kdy platí VT podle HDO (pro režim *Jen NT* a pro senzory bez pole `tariff`) | `8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00` |
+**3. Nízký a vysoký tarif (HDO)**
 
-Časy VT najdete u distributora podle kódu HDO (ČEZ, EG.D, PRE). Pokud máte jednotarif, zadejte stejnou distribuci do VT i NT a časy VT nechte prázdné.
+- **HDO senzor:** odkud se berou časy nízkého tarifu (NT). Podporováno:
+  - **ČEZ HDO – „Surová data“** (např. `sensor.cez_hdo_raw_data_…`): rozvrh NT na 7 dní dopředu z atributu `raw_json` (pole `datum` + `casy`). **Doporučeno pro ČEZ.**
+  - senzor se seznamem oken `start`/`end` (např. `next_windows`),
+  - binární senzor *Nízký tarif aktivní* (zapnuto = NT) – zná jen aktuální stav, budoucnost bere z časů VT.
 
-U senzoru typu A se distribuce nevyplňuje (nechte 0), u typu B plánovač počítá **cenu = spotová cena + distribuce**.
+  Za koncem známého rozvrhu se opakuje vzor posledního dne.
+- **Časy VT:** ruční záloha, např. `8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00`.
 
-### Krok 3: Zapnutí
+Tarif se používá u pevného dvoutarifu, v režimu *Jen NT* a u senzorů bez pole `tariff`.
+
+**4. Auto (nepovinné)**, pro nabíjení do zadaných %:
+
+- **Stav baterie auta:** senzor v % (z integrace auta, např. Škoda, VW, Tesla),
+- **Kapacita baterie** v kWh,
+- **Účinnost nabíjení:** ztráty, obvykle 85–92 %, výchozí 90 %.
+
+Potřebná energie = (cílová % − aktuální %) × kapacita / účinnost.
+
+**Ceny na další den** se u spotu zveřejňují kolem 14:00, do té doby jsou známé jen do půlnoci. Pokud termín *Hotovo do* leží za koncem známých cen, plánovač neznámou část odhadne (průměr posledních cen). Nyní nabije jen úseky levnější než odhad, zbytek naplánuje po zveřejnění cen. Odhadované úseky jsou v kartě šrafované.
+
+### Krok 2: Zapnutí
 
 V kartě **EcoVolter** je sekce **Plánovač** (u varianty Minimalistic ji zapněte v editoru karty: *Plánovač → Zobrazit*). Zvolte režim:
 
 | Režim | Co dělá | Co nastavit |
 |---|---|---|
 | **Ručně** | plánovač nic nepřepíná | – |
-| **Nejlevnější** | do času *Hotovo do* nabije zadaný počet hodin nebo kWh v nejlevnějších úsecích (i rozptýlených po 15 min) | *Hodiny* / *kWh*, *Hotovo do*, volitelně *Max. cena* (prázdné = bez limitu) |
+| **Nejlevnější** | do času *Hotovo do* nabije zadaný počet hodin, kWh nebo auto do zadaných % v nejlevnějších úsecích (i rozptýlených po 15 min) | *Hodiny* / *kWh* / *%*, *Hotovo do*, volitelně *Max. cena* (prázdné = bez limitu) |
 | **Pod limit** | nabíjí, kdykoli je cena pod limitem | *Max. cena* |
-| **Jen NT** | nabíjí jen v nízkém tarifu | časy VT v kroku 2 |
+| **Jen NT** | nabíjí jen v nízkém tarifu | HDO senzor nebo časy VT |
 
 Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`.
 
@@ -141,7 +152,8 @@ Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`,
 - Když si nabíječka při připojení auta sama povolí nabíjení, plánovač to nebere jako ruční zásah a nabíjení podle plánu hned zase vypne.
 - Nabitý čas/energie se počítá od posledního termínu *Hotovo do*.
 - Cíl v kWh se přepočítává na čas podle aktuálního výkonu (nebo podle nastaveného proudu a fází), je to odhad.
-- Když nabíjení ručně zapnete/vypnete (vypínač v HA, aplikace EcoVolter), plánovač to respektuje, dokud plán sám nezmění rozhodnutí (např. do začátku dalšího úseku).
+- Když nabíjení ručně zapnete nebo vypnete (vypínač v HA, aplikace EcoVolter), plánovač to respektuje, dokud plán sám nezmění rozhodnutí. **Jakákoli změna plánu** v kartě nebo v entitách (režim, cíl, termín, max. cena) ale převezme řízení a nabíjení okamžitě přepne.
+- U cíle v **%** se průběžně sleduje senzor auta a po dosažení cílových % se nabíjení hned zastaví, i když plán počítal s delší dobou. Bez hodnoty ze senzoru plánovač nenabíjí a karta to ohlásí.
 - Pokud do termínu nestačí čas (nebo úseky pod limitem), karta ukáže varování, kolik se stihne.
 
 ### Entity plánovače
@@ -151,8 +163,8 @@ Všechno lze ovládat i z automatizací a skriptů:
 | Entita | Význam |
 |---|---|
 | `select.…_rezim_nabijeni` / *Režim nabíjení* | `manual`, `cheapest`, `price_limit`, `low_tariff` |
-| *Cíl nabíjení* (select) | `hours` nebo `energy` |
-| *Hodin nabíjení*, *Nabít energie*, *Maximální cena* (number) | parametry plánu |
+| *Cíl nabíjení* (select) | `hours`, `energy` nebo `soc` |
+| *Hodin nabíjení*, *Nabít energie*, *Nabít do* (%), *Maximální cena* (number) | parametry plánu |
 | *Hotovo do* (time) | termín |
 | *Další plánované nabíjení* (sensor) | čas dalšího startu, v atributech celý plán a odhad ceny |
 | *Plánované nabíjení teď* (binary_sensor) | zapnuto, když plán chce právě nabíjet |

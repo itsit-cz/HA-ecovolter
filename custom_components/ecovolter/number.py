@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.const import UnitOfElectricCurrent, UnitOfEnergy, UnitOfTime
+from homeassistant.const import PERCENTAGE, UnitOfElectricCurrent, UnitOfEnergy, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -56,6 +56,7 @@ SCHEDULER_NUMBERS = (
     ("target_hours", "target_hours", 0, 24, 0.25, UnitOfTime.HOURS, "mdi:timer-outline"),
     ("target_energy", "target_energy", 0, 150, 1, UnitOfEnergy.KILO_WATT_HOUR, "mdi:battery-charging"),
     ("max_price", "max_price", 0, 30, 0.1, "CZK/kWh", "mdi:cash-lock"),
+    ("target_soc", "target_soc", 10, 100, 1, PERCENTAGE, "mdi:battery-charging-80"),
 )
 
 

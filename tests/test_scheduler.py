@@ -238,8 +238,13 @@ async def test_energy_target_and_options(hass: HomeAssistant, freezer) -> None:
 
         result = await hass.config_entries.options.async_init(entry.entry_id)
         result = await hass.config_entries.options.async_configure(
-            result["flow_id"],
-            {"scan_interval": 2, "distribution_vt": 2, "distribution_nt": 0.5, "vt_windows": "ráno"},
+            result["flow_id"], {"scan_interval": 2, "price_type": "sensor"}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"distribution_vt": 2, "distribution_nt": 0.5}
+        )
+        result = await hass.config_entries.options.async_configure(
+            result["flow_id"], {"vt_windows": "ráno"}
         )
         assert result["errors"] == {"vt_windows": "invalid_vt_windows"}
     finally:
@@ -429,3 +434,173 @@ async def test_target_reached_stays_done_after_replug(hass: HomeAssistant, freez
         await hass.async_block_till_done()
         for p in patches:
             p.stop()
+
+
+
+# ---------------------------------------------- fixed tariff, HDO, SoC, control
+
+
+def test_fixed_tariff_with_hdo_windows() -> None:
+    from custom_components.ecovolter.scheduler import TariffModel, fixed_tariff_slots, parse_hdo_windows
+
+    tz = dt_util.get_default_time_zone()
+    day = datetime(2026, 10, 24, 0, 0, tzinfo=tz)
+    hdo = State(
+        "sensor.cez_hdo",
+        "x",
+        {
+            "next_windows": [
+                {"start": day.replace(hour=0).isoformat(), "end": day.replace(hour=8).isoformat()},
+                {"start": day.replace(hour=9).isoformat(), "end": day.replace(hour=16).isoformat()},
+                {"start": day.replace(hour=17).isoformat(), "end": (day + timedelta(days=1)).isoformat()},
+            ]
+        },
+    )
+    tariff = TariffModel([], parse_hdo_windows(hdo))
+    slots = fixed_tariff_slots(day, day + timedelta(days=2), tariff, 4.0, 2.0, 1.5, 0.3)
+    by = {s.start: s for s in slots}
+    assert by[day.replace(hour=8)].price == pytest.approx(5.5)  # VT 4 + 1.5
+    assert by[day.replace(hour=10)].price == pytest.approx(2.3)  # NT 2 + 0.3
+    # beyond the known windows the last day's pattern repeats
+    assert not by[day.replace(day=25, hour=8, minute=30)].low_tariff
+    assert by[day.replace(day=25, hour=12)].low_tariff
+    # binary HDO sensor decides "now"
+    now = day.replace(hour=8, minute=5)
+    assert TariffModel([], [], hdo_now=True, now=now)(now.replace(minute=0))
+
+
+async def test_fixed_tariff_entry_and_soc_target(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 0, tzinfo=tz)
+    freezer.move_to(start)
+    hass.states.async_set("sensor.auto_baterie", "60", {"device_class": "battery", "unit_of_measurement": "%"})
+    entry, status, settings, pm, ids, patches = await _setup(
+        hass,
+        options={
+            "price_type": "fixed", "energy_vt": 4.0, "energy_nt": 2.0,
+            "distribution_vt": 1.5, "distribution_nt": 0.3, "vt_windows": "20:00-22:00",
+            "soc_entity": "sensor.auto_baterie", "battery_kwh": 50, "charging_efficiency": 90,
+        },
+    )
+    sched = entry.runtime_data.scheduler
+    try:
+        assert sched.current_price == pytest.approx(5.5)
+        await hass.services.async_call("number", "set_value", {"entity_id": ids["target_soc"], "value": 80}, blocking=True)
+        await hass.services.async_call("select", "select_option", {"entity_id": ids["target_type"], "option": "soc"}, blocking=True)
+        await hass.services.async_call("select", "select_option", {"entity_id": ids["charging_mode"], "option": "cheapest"}, blocking=True)
+        # 20 % of 50 kWh / 0.9 = 11.1 kWh at 11.04 kW ≈ 1 h, only NT slots (from 22:00)
+        assert sched.needed_kwh_soc() == pytest.approx(11.11, rel=0.01)
+        assert min(sched.plan.selected) == start.replace(hour=22)
+        assert settings["isChargingEnable"] is False
+        attrs = hass.states.get(ids["charging_plan"]).attributes
+        assert attrs["soc"] == 60 and attrs["target_soc"] == 80
+
+        # SoC reaches the target earlier than planned -> stop right away, done
+        freezer.move_to(start.replace(hour=22, minute=1))
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is True
+        hass.states.async_set("sensor.auto_baterie", "80", {"device_class": "battery"})
+        freezer.tick(2)
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert sched.finished and settings["isChargingEnable"] is False
+
+        # no SoC sensor value -> do not charge, report it
+        hass.states.async_set("sensor.auto_baterie", "unavailable")
+        sched.rearm()
+        assert sched.reason == "no_soc" and not sched.charge_now
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()
+
+
+async def test_plan_change_overrides_manual_and_rate_limit(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 0, tzinfo=tz)
+    freezer.move_to(start + timedelta(minutes=1))
+    hass.states.async_set(SPOT, "5", _prices_state(start, [1, 9, 9, 9, 9, 9]).attributes)
+    entry, status, settings, pm, ids, patches = await _setup(hass)
+    sched = entry.runtime_data.scheduler
+    try:
+        sched.set_option("ready_by", "02:00")
+        sched.set_option("target_hours", 1)
+        sched.set_option("mode", "cheapest")
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is True  # 20:00 is the cheap hour
+        # user switches charging off by hand -> respected
+        await hass.services.async_call("switch", "turn_off", {"entity_id": ids["charging_enabled"]}, blocking=True)
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is False
+        # user changes the plan (deadline) -> plan takes control immediately, no 30 s wait
+        await hass.services.async_call("time", "set_value", {"entity_id": ids["ready_by"], "time": "03:00:00"}, blocking=True)
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is True
+        # plan change that stops charging also applies immediately
+        await hass.services.async_call("number", "set_value", {"entity_id": ids["max_price"], "value": 0.5}, blocking=True)
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is False
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()
+
+
+async def test_config_flow_asks_for_prices(hass: HomeAssistant) -> None:
+    from homeassistant import config_entries
+
+    hass.config.components.update({"frontend", "http"})
+    with (
+        patch.object(EcoVolterApi, "async_get_diagnostic", return_value={"serialNumber": "XYZ"}),
+        patch.object(EcoVolterApi, "async_get_status", return_value={}),
+        patch("custom_components.ecovolter.async_setup_entry", return_value=True),
+        patch("custom_components.ecovolter.async_setup", return_value=True),
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: "10.0.0.9", CONF_SECRET: "s"})
+        assert result["step_id"] == "price_type"
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"price_type": "fixed"})
+        assert result["step_id"] == "prices"
+        assert "energy_vt" in result["data_schema"].schema
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {"energy_vt": 4, "energy_nt": 2, "distribution_vt": 1.5, "distribution_nt": 0.3},
+        )
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"vt_windows": "8:00-9:00"})
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"battery_kwh": 77, "charging_efficiency": 90})
+        assert result["type"] == "create_entry"
+        assert result["title"] == "EcoVolter XYZ"
+        assert result["options"]["price_type"] == "fixed" and result["options"]["energy_vt"] == 4
+
+
+def test_cez_raw_hdo_schedule() -> None:
+    from custom_components.ecovolter.scheduler import TariffModel, parse_hdo_windows
+
+    casy = "00:00-08:00;   09:00-12:00;   13:00-15:00;   16:00-19:00;   20:00-24:00"
+    days = ["24.10.2026", "25.10.2026", "26.10.2026"]
+    state = State(
+        "sensor.cez_hdo_raw_data_8452_evv2",
+        "ok",
+        {
+            "raw_json": {
+                "timestamp": "2026-10-24T04:58:28+02:00",
+                "data": {"data": {"signals": [{"signal": "EVV2", "den": "x", "datum": d, "casy": casy} for d in days], "amm": False}},
+            },
+            "friendly_name": "ČEZ HDO (EVV2) Surová data",
+        },
+    )
+    windows = parse_hdo_windows(state)
+    tz = dt_util.get_default_time_zone()
+    d = datetime(2026, 10, 24, tzinfo=tz)
+    # 20:00-24:00 and next day's 00:00-08:00 are merged
+    assert (d.replace(hour=20), d.replace(day=25, hour=8)) in windows
+    assert windows[0] == (d, d.replace(hour=8))
+    tariff = TariffModel([], windows)
+    nt = lambda h, m=0, day=24: tariff(d.replace(day=day, hour=h, minute=m))  # noqa: E731
+    assert nt(13, 30) and nt(23) and nt(2, day=25)
+    assert not nt(8, 15) and not nt(12, 30) and not nt(15, 45) and not nt(19, 30)
+    # after the published days the last day's pattern repeats
+    assert not nt(8, 30, day=28) and nt(10, day=28)
