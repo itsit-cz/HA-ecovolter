@@ -13,6 +13,7 @@ Charging scheduler.
 - Charged time/energy is tracked per cycle; settings and progress survive restarts.
 - New entities: charging mode, charging target, hours, energy, max price, ready by, next planned charging (with full plan), electricity price incl. distribution, scheduled charging now.
 - Setup wizard with branches: spot (final-price sensor, or spot + markup + distribution + VAT), fixed two-rate or single-rate tariff; VT/NT source ČEZ / HDO sensor / manual; summary with prices incl. VAT and today's NT windows. Prices entered excl. VAT. Options = menu (prices · VT/NT · cars · refresh). Existing settings are migrated automatically.
+- Card title defaults to the device name from the integration (incl. a rename in HA); the card's own name still wins.
 - Up to 3 cars: battery sensor, capacity, efficiency, plug sensor; car switch in the card with battery level; automatic detection of the plugged-in car; per-car target %.
 - HDO: low-tariff schedule from the ČEZ HDO raw data sensor (`datum` + `casy`, 7 days ahead), a sensor with a start/end window list, or a binary sensor; VT times as fallback.
 - Charging target in % of the car battery (car SoC sensor, battery capacity, charging efficiency); stops as soon as the target % is reached.

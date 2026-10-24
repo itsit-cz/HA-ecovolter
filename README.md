@@ -61,7 +61,7 @@ Chyba autentizace nevyvolává nový DNS překlad.
 
 ## EcoVolter karta
 
-Integrace registruje vlastní kartu **EcoVolter**, kterou lze přidat přes běžný editor dashboardu. V editoru karty lze vybrat konkrétní nabíječku, variantu **Minimalistic**, **Compact** nebo **Detailed**, vlastní název, jazyk **Čeština / English** a zobrazení sekce **Plánovač**.
+Integrace registruje vlastní kartu **EcoVolter**, kterou lze přidat přes běžný editor dashboardu. V editoru karty lze vybrat konkrétní nabíječku, variantu **Minimalistic**, **Compact** nebo **Detailed**, vlastní název (prázdné = název zařízení z integrace), jazyk **Čeština / English** a zobrazení sekce **Plánovač**.
 
 Karta zobrazuje výkon, energii relace, počet aktivních fází a nastavený nabíjecí proud. Umožňuje zapnout/vypnout nabíjení, přepnout 1/3 fáze a nastavit proud 6–16 A. Pro ovládání proudu lze v editoru zvolit slider nebo kompaktní ovládání **− / hodnota / +** s možností ručního zadání. Minimalistic varianta zobrazuje základní údaje přímo ve stavovém řádku, Detailed varianta navíc proud L1–L3, napětí L1–L3 a dlouhodobé statistiky.
 
