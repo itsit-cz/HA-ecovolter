@@ -5,8 +5,9 @@
 Charging scheduler.
 
 - New modes: Manual, Cheapest hours, Below price limit, Low tariff (NT) only.
-- Cheapest hours: set hours or kWh and a "ready by" time; the cheapest (possibly scattered) price slots before the deadline are selected and charging is switched on/off automatically. Re-plans when tomorrow's prices arrive.
+- Cheapest hours: set hours or kWh and a "ready by" time; the cheapest (possibly scattered) price slots before the deadline are selected and charging is switched on/off automatically. Re-plans when tomorrow's prices are published (around 14:00); until then the unknown part is estimated and only slots cheaper than the estimate are used.
 - Price = spot price (Czech Energy Spot Prices, hourly or 15-min) + distribution VT/NT; VT windows and distribution prices are set in the integration options.
+- Supports a custom final-price sensor (list attribute `[{start, price, tariff}]`, auto-detected); distribution is not added to it.
 - Optional max price also limits the Cheapest hours plan.
 - Manual changes (HA switch, EcoVolter app) are respected until the plan changes its decision.
 - Charged time/energy is tracked per cycle; settings and progress survive restarts.

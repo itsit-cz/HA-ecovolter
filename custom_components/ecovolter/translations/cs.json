@@ -125,10 +125,10 @@
     "step": {
       "init": {
         "title": "Možnosti",
-        "description": "Interval obnovy a ceny pro plánovač nabíjení. Cenový senzor: nechte prázdné pro automatické nalezení senzoru Czech Energy Spot Prices. Distribuce: cena distribuce za kWh ve vysokém (VT) a nízkém (NT) tarifu vč. DPH. Časy VT: kdy platí vysoký tarif podle HDO, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
+        "description": "Interval obnovy a ceny pro plánovač. Cenový senzor: nechte prázdné pro automatické nalezení (senzor s výslednou cenou [{start, price, tariff}] nebo Czech Energy Spot Prices). Distribuce VT/NT se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0. Časy VT podle HDO, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
         "data": {
           "scan_interval": "Interval obnovy (s)",
-          "price_entity": "Senzor spotové ceny",
+          "price_entity": "Cenový senzor",
           "distribution_vt": "Distribuce VT (Kč/kWh)",
           "distribution_nt": "Distribuce NT (Kč/kWh)",
           "vt_windows": "Časy vysokého tarifu (VT)"

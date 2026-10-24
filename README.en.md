@@ -85,4 +85,4 @@ MIT © 2026 IT síť s.r.o.
 
 ## Charging scheduler
 
-Choose a mode in the card (Scheduler section) or via entities: **Manual**, **Cheapest** (hours or kWh + *Ready by*; cheapest slots are selected and charging is switched automatically; optional max price), **Below limit** and **Low tariff only**. Prices come from the [Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices) sensor; set distribution prices (VT/NT) and VT windows in the integration options. Manual changes are respected until the plan changes its decision.
+Choose a mode in the card (Scheduler section) or via entities: **Manual**, **Cheapest** (hours or kWh + *Ready by*; cheapest slots are selected and charging is switched automatically; optional max price), **Below limit** and **Low tariff only**. Prices come from a custom final-price sensor (list attribute `[{start, price, tariff}]`, auto-detected, used as-is) or from the [Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices) sensor; set distribution prices (VT/NT) and VT windows in the integration options. Manual changes are respected until the plan changes its decision.

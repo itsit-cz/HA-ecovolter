@@ -72,7 +72,8 @@ const T = {
     shortfall: "Do termínu lze naplánovat jen", reached: "Cíl splněn", noPrices: "Chybí ceny elektřiny – nastavte senzor v Možnostech integrace",
     manualInfo: "Nabíjení ovládáte ručně.", lowTariffInfo: "Nabíjí se jen v nízkém tarifu (NT).",
     limitInfo: "Nabíjí se, kdykoli je cena pod limitem.", chargingNow: "nabíjí se podle plánu", waiting: "čeká na levný úsek",
-    vt: "VT", currency: "Kč",
+    vt: "VT", currency: "Kč", est: "odhad",
+    awaitPrices: "část plánu po {t} je odhad – upřesní se po zveřejnění cen na další den (kolem 14:00)",
   },
   en: {
     connected: "Vehicle connected", disconnected: "Vehicle disconnected",
@@ -91,7 +92,8 @@ const T = {
     shortfall: "Before the deadline only", reached: "Target reached", noPrices: "No electricity prices – set the sensor in the integration options",
     manualInfo: "Charging is controlled manually.", lowTariffInfo: "Charges only in the low tariff (NT).",
     limitInfo: "Charges whenever the price is below the limit.", chargingNow: "charging as planned", waiting: "waiting for a cheap slot",
-    vt: "VT", currency: "CZK",
+    vt: "VT", currency: "CZK", est: "estimate",
+    awaitPrices: "part of the plan after {t} is an estimate – refined when tomorrow's prices are published (around 14:00)",
   },
 };
 
@@ -175,13 +177,14 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
 .field{overflow:hidden;box-sizing:border-box;width:100%}
 .field input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;padding:0;text-align:center}
 .field span{font-size:12px;opacity:.7}
-.sched-status{margin-top:10px;font-size:13px;line-height:1.4}
+.sched-status{margin-top:10px;font-size:13px;line-height:1.4;white-space:pre-line}
 .sched-status.warn{color:var(--warning-color,#e69500)}
 .timeline{position:relative;display:flex;align-items:flex-end;gap:1px;height:72px;margin-top:10px;touch-action:pan-y}
 .timeline .bar{flex:1;min-width:1px;border-radius:2px 2px 0 0;background:var(--disabled-text-color,#bbb);opacity:.55;position:relative}
 .timeline .bar.sel{background:var(--primary-color);opacity:1}
 .timeline .bar.vt::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:3px;background:var(--error-color,#db4437);opacity:.6}
-.timeline .bar.past{opacity:.25}
+.timeline .bar.est{background:repeating-linear-gradient(135deg,var(--disabled-text-color,#bbb) 0 3px,transparent 3px 6px);opacity:.5}
+.timeline .bar.est.sel{background:repeating-linear-gradient(135deg,var(--primary-color) 0 3px,transparent 3px 6px);opacity:.9}
 .tl-axis{display:flex;justify-content:space-between;font-size:11px;opacity:.65;margin-top:7px}
 .tl-info{font-size:12px;opacity:.8;min-height:16px;margin-top:4px;text-align:center}
 .limit-line{position:absolute;left:0;right:0;border-top:1px dashed var(--error-color,#db4437);pointer-events:none}
@@ -490,6 +493,7 @@ class EcoVolterCard extends HTMLElement {
       else if (start) txt += ` · ${t.start} ${hhmm(start)}`;
       if (plan.estimated_cost) txt += ` · ${t.estimate} ${Math.round(plan.estimated_cost)} ${t.currency}`;
       if (plan.delivered_minutes) txt += ` · ${t.charged} ${fmtDur(plan.delivered_minutes)}`;
+      if (plan.waiting_for_prices && plan.prices_until) txt += `\nℹ ${t.awaitPrices.replace("{t}", hhmm(new Date(plan.prices_until)))}`;
     }
     set(status, txt);
     status.classList.toggle("warn", warn);
@@ -512,11 +516,11 @@ class EcoVolterCard extends HTMLElement {
     const max = Math.max(...prices, plan.max_price || 0, 0.01);
     const min = Math.min(0, ...prices);
     const h = (p) => Math.max(3, ((p - min) / (max - min)) * 100);
-    tl.innerHTML = shown.map(([st, price, sel, vt]) => {
+    tl.innerHTML = shown.map(([st, price, sel, vt, est]) => {
       const d = new Date(st);
       const selOn = sel && mode === "cheapest";
-      const info = `${hhmm(d)} · ${Number(price).toFixed(2)} ${t.currency}/kWh${vt ? " · " + t.vt : ""}`;
-      return `<div class="bar${selOn ? " sel" : ""}${vt ? " vt" : ""}" style="height:${h(price)}%" data-info="${esc(info)}"></div>`;
+      const info = `${hhmm(d)} · ${est ? "~" : ""}${Number(price).toFixed(2)} ${t.currency}/kWh${vt ? " · " + t.vt : ""}${est ? " (" + t.est + ")" : ""}`;
+      return `<div class="bar${selOn ? " sel" : ""}${vt ? " vt" : ""}${est ? " est" : ""}" style="height:${h(price)}%" data-info="${esc(info)}"></div>`;
     }).join("") + (mode === "price_limit" && plan.max_price ? `<div class="limit-line" style="bottom:${h(plan.max_price)}%"></div>` : "");
     const first = shown[0] ? new Date(shown[0][0]) : null, last = shown.at(-1) ? new Date(shown.at(-1)[0]) : null;
     const mid = shown[Math.floor(shown.length / 2)] ? new Date(shown[Math.floor(shown.length / 2)][0]) : null;
