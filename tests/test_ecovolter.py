@@ -211,13 +211,19 @@ async def test_setup_entities_and_options(hass: HomeAssistant) -> None:
         from homeassistant.helpers import entity_registry as er
 
         reg = er.async_get(hass)
-        states = [
-            hass.states.get(e.entity_id)
-            for e in er.async_entries_for_config_entry(reg, entry.entry_id)
-        ]
-        assert all(s is not None and s.state != "unavailable" for s in states)
-        assert len(states) == 18
-        number = next(s for s in states if s.domain == "number")
+        entries = er.async_entries_for_config_entry(reg, entry.entry_id)
+        states = [hass.states.get(e.entity_id) for e in entries]
+        # 18 charger entities + 9 scheduler entities
+        assert len(states) == 27
+        # without a price sensor only the total price is unavailable
+        assert [
+            e.translation_key
+            for e, s in zip(entries, states)
+            if s is None or s.state == "unavailable"
+        ] == ["current_total_price"]
+        number = next(
+            hass.states.get(e.entity_id) for e in entries if e.translation_key == "target_current" and e.domain == "number"
+        )
         assert float(number.state) == 10
 
         await hass.services.async_call(

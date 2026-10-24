@@ -84,3 +84,16 @@ Automatizace v Home Assistantu nenahrazují elektrické jištění ani jiné bez
 ## Licence
 
 MIT © 2026 IT síť s.r.o.
+
+## Plánovač nabíjení
+
+V kartě (sekce Plánovač) nebo přes entity zvolte režim:
+
+- **Ručně** – plánovač nic nepřepíná.
+- **Nejlevnější** – zadejte počet hodin nebo kWh a čas *Hotovo do*. Integrace vybere nejlevnější úseky (i rozptýlené po 15 min) a sama zapíná a vypíná nabíjení. Volitelná *Max. cena* zakáže dražší úseky.
+- **Pod limit** – nabíjí, kdykoli je cena pod *Max. cenou*.
+- **Jen NT** – nabíjí jen v nízkém tarifu.
+
+Ceny se berou ze senzoru integrace [Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices) (najde se automaticky, případně ho vyberte v *Možnostech*). V *Možnostech* integrace zadejte také cenu distribuce za kWh pro VT a NT a časy VT podle vašeho HDO (např. `8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00`). Plánovaná cena = spot + distribuce.
+
+Ruční zásah (vypínač v HA, aplikace EcoVolter) má přednost, dokud plán nezmění své rozhodnutí.
