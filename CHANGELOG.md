@@ -1,6 +1,34 @@
 # Changelog
 
-## v0.4.0 — 2026-10-24
+## v1.0.0 — 2026-10-24
+
+First public release for testing. Summary of the 0.3 and 0.4 development versions:
+
+**Charger communication**
+- Fixed periodic freezes (fresh connection per request, no retry on the same IP after a timeout, handling of garbled responses).
+- Polling backs off during outages; after 60 s without a response entities become unavailable instead of showing frozen values.
+- Default refresh interval 2 s (configurable 1–60 s); settings are read right after plug-in.
+
+**Charging scheduler**
+- Modes Manual, Cheapest, Below limit, Low tariff only; targets in hours, kWh or % of the car battery.
+- "Ready by" with day selection (today / tomorrow / day after); estimates unknown next-day spot prices until they are published (~14:00).
+- Target reached = done (no restart after replug or deadline) until a new plan or "Charge again".
+- Manual changes are respected; any plan change takes control immediately.
+
+**Setup**
+- Wizard with branches: spot (final-price sensor, or spot + markup + distribution + VAT), fixed two-rate, fixed single-rate; VT/NT from ČEZ Distribuce (7-day HDO schedule), an HDO sensor or manual times; summary with prices incl. VAT. Options menu. Settings from 0.x are migrated.
+
+**Cars**
+- Up to 3 cars per charger with battery sensor, capacity, efficiency and plug sensor; automatic detection of the plugged-in car; per-car target %.
+
+**Card**
+- Rebuilt for mobile (no lost taps, works for non-admin users, Shadow DOM), car switch, scheduler section with price timeline, title defaults to the device name.
+
+**Docs**
+- Complete documentation in Czech and English.
+
+
+## v0.4.0 (beta) — 2026-10-24
 
 Charging scheduler.
 

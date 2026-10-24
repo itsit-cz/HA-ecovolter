@@ -12,7 +12,7 @@
  * - Optimistic values expire: if the charger does not confirm a change within
  *   a few seconds, the card shows the real state again instead of lying forever.
  */
-const VERSION = "0.4.0";
+const VERSION = "1.0.0";
 const DOMAIN = "ecovolter";
 const MIN_A = 6;
 const MAX_A = 16;
