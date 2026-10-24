@@ -137,7 +137,9 @@ Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`,
 ### Jak se chová
 
 - Plán se přepočítává průběžně, také když kolem 14:00 přijdou ceny na zítřek a když se změní cíl nebo termín.
-- Nabitý čas/energie se počítá od posledního termínu *Hotovo do*. Po termínu začíná nový cyklus.
+- **Po splnění cíle je plánovač hotový** a sám už nabíjení nespustí: ani po odjetí a novém připojení auta, ani po uplynutí termínu. Nový plán se spustí, až nastavíte cíl, termín nebo režim (stačí i stejná hodnota, např. z denní automatizace), nebo tlačítkem **Nabít znovu** v kartě (entita *Nabít znovu*).
+- Když si nabíječka při připojení auta sama povolí nabíjení, plánovač to nebere jako ruční zásah a nabíjení podle plánu hned zase vypne.
+- Nabitý čas/energie se počítá od posledního termínu *Hotovo do*.
 - Cíl v kWh se přepočítává na čas podle aktuálního výkonu (nebo podle nastaveného proudu a fází), je to odhad.
 - Když nabíjení ručně zapnete/vypnete (vypínač v HA, aplikace EcoVolter), plánovač to respektuje, dokud plán sám nezmění rozhodnutí (např. do začátku dalšího úseku).
 - Pokud do termínu nestačí čas (nebo úseky pod limitem), karta ukáže varování, kolik se stihne.

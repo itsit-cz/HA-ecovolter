@@ -12,6 +12,8 @@ Charging scheduler.
 - Manual changes (HA switch, EcoVolter app) are respected until the plan changes its decision.
 - Charged time/energy is tracked per cycle; settings and progress survive restarts.
 - New entities: charging mode, charging target, hours, energy, max price, ready by, next planned charging (with full plan), electricity price incl. distribution, scheduled charging now.
+- Target reached = done: no new charging after unplug/replug or past the deadline until a new target/deadline/mode is set or "Charge again" is pressed (new button entity, button in the card).
+- Plug-in: charger settings are read immediately and a charger re-enabling itself is not treated as a manual override.
 - "Ready by" day: Today (nearest, repeats daily), Tomorrow, Day after tomorrow (new select entity, day picker in the card).
 - Card: "Ready by" uses hour/minute pickers (24 h) – the native time input sent half-typed times and was unreliable in the Companion app.
 - Card: scheduler section with mode buttons, target/deadline/limit fields, price timeline with planned slots and cost estimate. Decimal comma accepted.

@@ -127,6 +127,11 @@
       "ready_by": {
         "name": "Hotovo do"
       }
+    },
+    "button": {
+      "charge_again": {
+        "name": "Nabít znovu"
+      }
     }
   },
   "options": {

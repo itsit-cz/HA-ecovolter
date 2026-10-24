@@ -127,6 +127,11 @@
       "ready_by": {
         "name": "Ready by"
       }
+    },
+    "button": {
+      "charge_again": {
+        "name": "Charge again"
+      }
     }
   },
   "options": {

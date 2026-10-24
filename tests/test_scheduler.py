@@ -373,3 +373,59 @@ async def test_ready_day_tomorrow(hass: HomeAssistant, freezer) -> None:
         await hass.async_block_till_done()
         for p in patches:
             p.stop()
+
+
+async def test_target_reached_stays_done_after_replug(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 22, 0, tzinfo=tz)
+    freezer.move_to(start)
+    hass.states.async_set(SPOT, "1", _prices_state(start, [1] * 12).attributes)
+    entry, status, settings, pm, ids, patches = await _setup(hass)
+    coord = entry.runtime_data
+    sched = coord.scheduler
+
+    async def poll(seconds=2):
+        freezer.tick(seconds)
+        await coord.async_refresh()
+        await hass.async_block_till_done()
+
+    try:
+        sched.set_option("ready_by", "06:00")
+        sched.set_option("target_hours", 0.25)  # 15 min
+        sched.set_option("mode", "cheapest")
+        await hass.async_block_till_done()
+        assert settings["isChargingEnable"] is True
+        status.update(isCharging=True, actualPower=11.0)
+        for _ in range(16):
+            await poll(60)
+        assert sched.finished and sched.reason == "target_reached"
+        assert settings["isChargingEnable"] is False
+        status.update(isCharging=False, actualPower=0)
+
+        # unplug, charger re-enables itself on the next plug-in -> scheduler turns it off again
+        status["isVehicleConnected"] = False
+        await poll(60)
+        status["isVehicleConnected"] = True
+        settings["isChargingEnable"] = True
+        await poll(2)
+        assert settings["isChargingEnable"] is False
+
+        # deadline passes -> still done, no new plan on its own
+        freezer.move_to(start.replace(day=25, hour=8))
+        await poll(2)
+        assert sched.finished and sched.charge_now is False
+        assert hass.states.get(ids["charging_plan"]).attributes["finished"] is True
+
+        # "charge again" starts a new plan
+        await hass.services.async_call("button", "press", {"entity_id": ids["charge_again"]}, blocking=True)
+        assert not sched.finished and sched.plan.needed_seconds == 900
+
+        # finish again, then the same target set by an automation re-arms too
+        sched.finished = True
+        sched.set_option("target_hours", 0.25)
+        assert not sched.finished and sched.delivered_seconds == 0
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()

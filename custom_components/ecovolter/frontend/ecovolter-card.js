@@ -47,6 +47,7 @@ const KEY_MAP = {
   "number:max_price": "max_price",
   "time:ready_by": "ready_by",
   "select:ready_day": "ready_day",
+  "button:charge_again": "charge_again",
   "sensor:charging_plan": "charging_plan",
   "sensor:current_total_price": "current_total_price",
   "binary_sensor:scheduled_now": "scheduled_now",
@@ -75,6 +76,7 @@ const T = {
     limitInfo: "Nabíjí se, kdykoli je cena pod limitem.", chargingNow: "nabíjí se podle plánu", waiting: "čeká na levný úsek",
     vt: "VT", currency: "Kč", est: "odhad", until: "do",
     days: { today: "Dnes", tomorrow: "Zítra", day_after: "Pozítří" },
+    chargeAgain: "Nabít znovu", doneHint: "Po odpojení a připojení auta se nabíjení samo nespustí.",
     awaitPrices: "část plánu po {t} je odhad – upřesní se po zveřejnění cen na další den (kolem 14:00)",
   },
   en: {
@@ -96,6 +98,7 @@ const T = {
     limitInfo: "Charges whenever the price is below the limit.", chargingNow: "charging as planned", waiting: "waiting for a cheap slot",
     vt: "VT", currency: "CZK", est: "estimate", until: "by",
     days: { today: "Today", tomorrow: "Tomorrow", day_after: "Day after" },
+    chargeAgain: "Charge again", doneHint: "Re-plugging the car will not start charging on its own.",
     awaitPrices: "part of the plan after {t} is an estimate – refined when tomorrow's prices are published (around 14:00)",
   },
 };
@@ -183,6 +186,7 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
 .field input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;padding:0;text-align:center}
 .field span{font-size:12px;opacity:.7}
 .sched-status{margin-top:10px;font-size:13px;line-height:1.4;white-space:pre-line}
+.again{margin-top:8px;width:100%;padding:10px}
 .sched-status.warn{color:var(--warning-color,#e69500)}
 .timeline{position:relative;display:flex;align-items:flex-end;gap:1px;height:72px;margin-top:10px;touch-action:pan-y}
 .timeline .bar{flex:1;min-width:1px;border-radius:2px 2px 0 0;background:var(--disabled-text-color,#bbb);opacity:.55;position:relative}
@@ -407,6 +411,7 @@ class EcoVolterCard extends HTMLElement {
         <div class="param" id="pMax"><small>${esc(t.maxPrice)}</small>${field("maxPrice", t.currency + "/kWh", "0.1", 0, 30).replace("<input ", `<input placeholder="${esc(t.noLimit)}" `)}</div>
       </div>
       <div class="sched-status" id="schedStatus"></div>
+      <button id="chargeAgain" class="again" hidden>↻ ${esc(t.chargeAgain)}</button>
       <div class="timeline" id="timeline"></div>
       <div class="tl-axis" id="tlAxis"></div>
       <div class="tl-info" id="tlInfo"></div>
@@ -447,6 +452,10 @@ class EcoVolterCard extends HTMLElement {
       const bar = e.target.closest?.(".bar");
       if (bar) root.getElementById("tlInfo").textContent = bar.dataset.info;
     };
+    root.getElementById("chargeAgain").addEventListener("click", () => {
+      const b = this._s("charge_again");
+      if (b) this._call("button", "press", { entity_id: b.entity_id }, "charge_again");
+    });
     tl.addEventListener("pointermove", info);
     tl.addEventListener("pointerdown", info);
   }
@@ -511,7 +520,7 @@ class EcoVolterCard extends HTMLElement {
     else if (mode === "low_tariff") txt = t.lowTariffInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
     else if (!slots.length) { txt = t.noPrices; warn = true; }
     else if (mode === "price_limit") txt = t.limitInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
-    else if (plan.reason === "target_reached") txt = `✅ ${t.reached} · ${t.charged} ${fmtDur(plan.delivered_minutes)}` + (plan.delivered_kwh ? ` / ${plan.delivered_kwh} kWh` : "");
+    else if (plan.reason === "target_reached" || plan.finished) txt = `✅ ${t.reached} · ${t.charged} ${fmtDur(plan.delivered_minutes)}` + (plan.delivered_kwh ? ` / ${plan.delivered_kwh} kWh` : "") + `\n${t.doneHint}`;
     else {
       const startS = this._s("charging_plan");
       const start = !isBad(startS) ? new Date(startS.state) : null;
@@ -531,6 +540,7 @@ class EcoVolterCard extends HTMLElement {
     }
     set(status, txt);
     status.classList.toggle("warn", warn);
+    root.getElementById("chargeAgain").hidden = !(mode === "cheapest" && plan.finished && this._s("charge_again"));
 
     // Rebuild the bars only when the plan actually changes (minutes matter for "past").
     const sig = JSON.stringify([slots, mode, plan.max_price, Math.floor(Date.now() / 60000)]);

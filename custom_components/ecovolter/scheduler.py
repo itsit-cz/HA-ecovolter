@@ -42,6 +42,9 @@ READY_DAYS = [READY_TODAY, READY_TOMORROW, READY_DAY_AFTER]
 STORAGE_VERSION = 1
 # Never switch the charger more often than this (except manual commands).
 MIN_COMMAND_INTERVAL = 30
+# After the car is plugged in, the charger may enable charging on its own for
+# the new session. Changes in this window are not treated as manual overrides.
+PLUG_IN_GRACE_SECONDS = 90
 # Phase voltage used to estimate charging power from current.
 PHASE_VOLTAGE = 230
 # Price sensors this integration knows how to read, in order of preference.
@@ -360,6 +363,9 @@ class EcoVolterScheduler:
             self.vt_windows = []
 
         self.config: dict[str, Any] = dict(DEFAULT_CONFIG)
+        # Target reached: stay done (also after unplug/replug and past the
+        # deadline) until the user sets a new target/deadline/mode or re-arms.
+        self.finished = False
         # progress of the current cycle (until the next deadline)
         self.cycle_deadline: str | None = None
         self.delivered_seconds = 0.0
@@ -373,6 +379,8 @@ class EcoVolterScheduler:
         self._last_command: float = 0.0
         self._commanded: bool | None = None
         self._override_desired: bool | None = None
+        self._was_connected: bool | None = None
+        self._plugged_at: float = -1e9
         self._detect_at = -1e9
         self._detected: str | None = None
 
@@ -384,6 +392,7 @@ class EcoVolterScheduler:
             {k: v for k, v in (data.get("config") or {}).items() if k in DEFAULT_CONFIG}
         )
         progress = data.get("progress") or {}
+        self.finished = bool(progress.get("finished", False))
         self.cycle_deadline = progress.get("deadline")
         self.delivered_seconds = float(progress.get("seconds", 0.0))
         self.delivered_kwh = float(progress.get("kwh", 0.0))
@@ -395,6 +404,7 @@ class EcoVolterScheduler:
                 "deadline": self.cycle_deadline,
                 "seconds": round(self.delivered_seconds, 1),
                 "kwh": round(self.delivered_kwh, 4),
+                "finished": self.finished,
             },
         }
 
@@ -412,9 +422,19 @@ class EcoVolterScheduler:
 
     @callback
     def set_option(self, key: str, value: Any) -> None:
+        rearm = key in ("mode", "target_type", "target_hours", "target_energy", "ready_by", "ready_date")
         if self.config.get(key) == value:
+            # Setting the same target again (e.g. a daily automation) starts a
+            # new plan after the previous one was completed.
+            if rearm and self.finished:
+                self.rearm()
             return
         self.config[key] = value
+        if rearm and self.finished:
+            # new plan after a completed one: start counting from zero
+            self.finished = False
+            self.delivered_seconds = 0.0
+            self.delivered_kwh = 0.0
         if key in ("mode", "target_type", "target_hours", "target_energy"):
             self._override_desired = None
         if key == "mode" and value == MODE_MANUAL:
@@ -422,6 +442,19 @@ class EcoVolterScheduler:
         if key in ("target_type", "target_hours", "target_energy", "ready_by", "ready_date"):
             # a new target starts a new cycle
             self.cycle_deadline = None
+        self._save(1)
+        self.recalculate(dt_util.now())
+        self.coordinator.async_update_listeners()
+        self.hass.async_create_task(self.async_apply())
+
+    @callback
+    def rearm(self) -> None:
+        """Start a new plan for the current target ("charge again")."""
+        self.finished = False
+        self.delivered_seconds = 0.0
+        self.delivered_kwh = 0.0
+        self.cycle_deadline = None
+        self._override_desired = None
         self._save(1)
         self.recalculate(dt_util.now())
         self.coordinator.async_update_listeners()
@@ -491,6 +524,10 @@ class EcoVolterScheduler:
         status = (self.coordinator.data or {}).get("status", {})
         return bool(status.get("isCharging", status.get("charging", False)))
 
+    def _is_connected(self) -> bool:
+        status = (self.coordinator.data or {}).get("status", {})
+        return bool(status.get("isVehicleConnected", status.get("vehicleConnected", False)))
+
     def _charging_enabled(self) -> bool | None:
         value = (self.coordinator.data or {}).get("settings", {}).get("isChargingEnable")
         return None if value is None else bool(value)
@@ -520,6 +557,8 @@ class EcoVolterScheduler:
     # ---- planning
 
     def needed_seconds(self) -> float:
+        if self.finished:
+            return 0.0
         if self.config["target_type"] == TARGET_ENERGY:
             remaining_kwh = float(self.config["target_energy"]) - self.delivered_kwh
             power = self._power_kw()
@@ -530,7 +569,7 @@ class EcoVolterScheduler:
         deadline = self.deadline(now)
         if self.cycle_deadline != deadline.isoformat():
             # new cycle: forget what was charged for the previous deadline
-            if self.cycle_deadline is not None:
+            if self.cycle_deadline is not None and not self.finished:
                 self.delivered_seconds = 0.0
                 self.delivered_kwh = 0.0
             self.cycle_deadline = deadline.isoformat()
@@ -565,7 +604,11 @@ class EcoVolterScheduler:
             self.charge_now = current.price <= limit
             self.reason = "below_limit" if self.charge_now else "above_limit"
         elif mode == MODE_CHEAPEST:
-            if self.plan.needed_seconds <= 0:
+            if self.finished or self.plan.needed_seconds <= 0:
+                if not self.finished:
+                    self.finished = True
+                    self._save(1)
+                    _LOGGER.info("EcoVolter scheduler: charging target reached")
                 self.charge_now, self.reason = False, "target_reached"
             else:
                 self.charge_now = current.start in self.plan.selected
@@ -596,6 +639,14 @@ class EcoVolterScheduler:
             self.delivered_kwh += self._power_kw() * dt / 3600
             self._save()
         self._last_tick = now_m
+        connected = self._is_connected()
+        if connected and self._was_connected is False:
+            # New session: forget any manual override from before and let the
+            # plan decide right away (the charger may have enabled itself).
+            self._plugged_at = now_m
+            self._override_desired = None
+            self._last_command = -1e9
+        self._was_connected = connected
         self.recalculate(dt_util.now())
         self.hass.async_create_task(self.async_apply())
 
@@ -615,8 +666,15 @@ class EcoVolterScheduler:
             return
         desired = self.charge_now
 
-        # External change (EcoVolter app, button on the charger…): treat as manual.
-        if self._commanded is not None and enabled != self._commanded and self._override_desired is None:
+        # External change (EcoVolter app, button on the charger…): treat as manual –
+        # except right after plug-in, when the charger may enable itself.
+        just_plugged = monotonic.monotonic() - self._plugged_at < PLUG_IN_GRACE_SECONDS
+        if (
+            self._commanded is not None
+            and enabled != self._commanded
+            and self._override_desired is None
+            and not just_plugged
+        ):
             self._override_desired = desired
             self._commanded = enabled
         if self._override_desired is not None:
@@ -654,6 +712,7 @@ class EcoVolterScheduler:
             "needed_minutes": round(self.plan.needed_seconds / 60),
             "planned_minutes": round(self.plan.planned_seconds / 60),
             "complete": self.plan.complete,
+            "finished": self.finished,
             "delivered_minutes": round(self.delivered_seconds / 60),
             "delivered_kwh": round(self.delivered_kwh, 2),
             "estimated_cost": round(self.plan.estimated_cost, 2),

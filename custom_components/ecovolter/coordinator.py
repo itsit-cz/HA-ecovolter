@@ -59,6 +59,7 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._failures = 0
         self._logged_unavailable = False
         self.scheduler: EcoVolterScheduler | None = None
+        self._last_connected: bool | None = None
 
     async def _safe_read(self, name: str, reader) -> dict[str, Any] | None:
         """Read one API section; return None on failure."""
@@ -102,7 +103,20 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # When the charger is not answering status, do not pile more requests
         # on top of it in the same cycle.
         if status_ok:
-            if now - self._last_settings >= SETTINGS_REFRESH_SECONDS or not self._settings:
+            connected = bool(
+                status.get("isVehicleConnected", status.get("vehicleConnected", False))
+            )
+            plug_changed = (
+                self._last_connected is not None and connected != self._last_connected
+            )
+            self._last_connected = connected
+            # Plug-in/out: the charger may change its own settings (e.g. enable
+            # charging for the new session) – read them right away.
+            if (
+                plug_changed
+                or now - self._last_settings >= SETTINGS_REFRESH_SECONDS
+                or not self._settings
+            ):
                 settings = await self._safe_read("settings", self.api.async_get_settings)
                 if settings is not None:
                     self._settings = settings
