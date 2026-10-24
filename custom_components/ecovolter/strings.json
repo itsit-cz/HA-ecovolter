@@ -125,10 +125,10 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Refresh interval and price settings for the charging scheduler. Price sensor: leave empty to detect the Czech Energy Spot Prices sensor automatically. Distribution: your distribution price per kWh in the high (VT) and low (NT) tariff incl. VAT. VT windows: times of the high tariff from your HDO schedule, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
+        "description": "Refresh interval and scheduler prices. Price sensor: leave empty to detect automatically (final-price sensor [{start, price, tariff}] or Czech Energy Spot Prices). VT/NT distribution is only added to Czech Energy Spot Prices – leave 0 for a final-price sensor. VT windows from your HDO, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
         "data": {
           "scan_interval": "Refresh interval (s)",
-          "price_entity": "Spot price sensor",
+          "price_entity": "Price sensor",
           "distribution_vt": "Distribution VT (CZK/kWh)",
           "distribution_nt": "Distribution NT (CZK/kWh)",
           "vt_windows": "High tariff (VT) windows"
