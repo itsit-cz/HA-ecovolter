@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util
 from .api import EcoVolterApi
 from .const import CONF_SCAN_INTERVAL, CONF_SECRET, DEFAULT_SCAN_INTERVAL, PLATFORMS
 from .coordinator import EcoVolterCoordinator
+from .options import normalize_options
 from .scheduler import EcoVolterScheduler
 
 type EcoVolterConfigEntry = ConfigEntry[EcoVolterCoordinator]
@@ -37,6 +38,15 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     # Companion app always load the current card after an update.
     card_hash = await hass.async_add_executor_job(_file_hash, CARD_PATH)
     add_extra_js_url(hass, f"{CARD_ROUTE}?h={card_hash}")
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """v1 -> v2: scheduler options in the new format (wizard, multiple cars)."""
+    if entry.version == 1:
+        hass.config_entries.async_update_entry(
+            entry, options=normalize_options(dict(entry.options)), version=2
+        )
     return True
 
 

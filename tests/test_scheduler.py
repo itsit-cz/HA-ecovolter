@@ -237,15 +237,9 @@ async def test_energy_target_and_options(hass: HomeAssistant, freezer) -> None:
         assert round(sched.plan.needed_seconds) == 7200
 
         result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"scan_interval": 2, "price_type": "sensor"}
-        )
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"distribution_vt": 2, "distribution_nt": 0.5}
-        )
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"vt_windows": "ráno"}
-        )
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tariff_source"})
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "tariff_manual"})
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"vt_windows": "ráno"})
         assert result["errors"] == {"vt_windows": "invalid_vt_windows"}
     finally:
         await hass.config_entries.async_unload(entry.entry_id)
@@ -549,31 +543,207 @@ async def test_plan_change_overrides_manual_and_rate_limit(hass: HomeAssistant, 
             p.stop()
 
 
-async def test_config_flow_asks_for_prices(hass: HomeAssistant) -> None:
+async def _start_flow(hass):
     from homeassistant import config_entries
 
     hass.config.components.update({"frontend", "http"})
-    with (
-        patch.object(EcoVolterApi, "async_get_diagnostic", return_value={"serialNumber": "XYZ"}),
-        patch.object(EcoVolterApi, "async_get_status", return_value={}),
-        patch("custom_components.ecovolter.async_setup_entry", return_value=True),
-        patch("custom_components.ecovolter.async_setup", return_value=True),
-    ):
-        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: "10.0.0.9", CONF_SECRET: "s"})
-        assert result["step_id"] == "price_type"
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"price_type": "fixed"})
-        assert result["step_id"] == "prices"
-        assert "energy_vt" in result["data_schema"].schema
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    return await hass.config_entries.flow.async_configure(result["flow_id"], {CONF_HOST: "10.0.0.9", CONF_SECRET: "s"})
+
+
+FLOW_PATCHES = (
+    lambda: patch.object(EcoVolterApi, "async_get_diagnostic", return_value={"serialNumber": "XYZ"}),
+    lambda: patch.object(EcoVolterApi, "async_get_status", return_value={}),
+    lambda: patch("custom_components.ecovolter.async_setup_entry", return_value=True),
+    lambda: patch("custom_components.ecovolter.async_setup", return_value=True),
+)
+
+
+async def test_wizard_spot_final_with_tariff_in_data(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 0, tzinfo=tz)
+    freezer.move_to(start)
+    st = _final_state(start, [5.6, 4.9, 4.3, 4.7])
+    hass.states.async_set(st.entity_id, st.state, st.attributes)
+    hass.states.async_set("sensor.bila_baterie", "62")
+    with FLOW_PATCHES[0](), FLOW_PATCHES[1](), FLOW_PATCHES[2](), FLOW_PATCHES[3]():
+        result = await _start_flow(hass)
+        assert result["type"] == "menu" and result["step_id"] == "tariff_type"
+        flow = result["flow_id"]
+        result = await hass.config_entries.flow.async_configure(flow, {"next_step_id": "spot"})
+        assert result["step_id"] == "spot"
+        result = await hass.config_entries.flow.async_configure(flow, {"next_step_id": "spot_final_yes"})
+        result = await hass.config_entries.flow.async_configure(flow, {"price_entity": "sensor.neexistuje"})
+        assert result["errors"] == {"price_entity": "invalid_price_sensor"}
+        result = await hass.config_entries.flow.async_configure(flow, {"price_entity": st.entity_id})
+        # tariff is in the data -> VT/NT step skipped
+        assert result["step_id"] == "cars"
+        result = await hass.config_entries.flow.async_configure(flow, {"count": "2"})
+        assert result["step_id"] == "car"
         result = await hass.config_entries.flow.async_configure(
-            result["flow_id"],
-            {"energy_vt": 4, "energy_nt": 2, "distribution_vt": 1.5, "distribution_nt": 0.3},
+            flow, {"name": "Bílá", "soc_entity": "sensor.bila_baterie", "battery_kwh": 77, "efficiency": 90, "plug_entity": "binary_sensor.bila_kabel"}
         )
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"vt_windows": "8:00-9:00"})
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {"battery_kwh": 77, "charging_efficiency": 90})
+        result = await hass.config_entries.flow.async_configure(flow, {"name": "bílá", "battery_kwh": 0, "efficiency": 90})
+        assert result["errors"] == {"name": "invalid_car_name"}
+        result = await hass.config_entries.flow.async_configure(flow, {"name": "Modrá", "battery_kwh": 0, "efficiency": 90})
+        assert result["step_id"] == "summary"
+        text = "\n".join(result["description_placeholders"].values())
+        assert "5,60 Kč/kWh" in text and "z dat cenového senzoru" in text and "Bílá: baterie 62 %" in text
+        result = await hass.config_entries.flow.async_configure(flow, {})
         assert result["type"] == "create_entry"
-        assert result["title"] == "EcoVolter XYZ"
-        assert result["options"]["price_type"] == "fixed" and result["options"]["energy_vt"] == 4
+        o = result["options"]
+        assert o["price_type"] == "spot" and o["spot_final"] is True and o["tariff_source"] == "data"
+        assert [c["name"] for c in o["cars"]] == ["Bílá", "Modrá"]
+        assert o["cars"][0]["plug_entity"] == "binary_sensor.bila_kabel"
+
+
+async def test_wizard_spot_without_final_price_and_cez(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 10, 0, tzinfo=tz)
+    freezer.move_to(start)
+    hass.states.async_set(SPOT, "2", _prices_state(start, [2.0] * 4).attributes)
+    casy = "00:00-08:00; 09:00-12:00; 13:00-15:00; 16:00-19:00; 20:00-24:00"
+    hass.states.async_set(
+        "sensor.cez_hdo_raw", "ok",
+        {"raw_json": {"data": {"data": {"signals": [{"signal": "EVV2", "datum": "24.10.2026", "casy": casy}]}}}},
+    )
+    hass.states.async_set("sensor.neni_cez", "on")
+    with FLOW_PATCHES[0](), FLOW_PATCHES[1](), FLOW_PATCHES[2](), FLOW_PATCHES[3]():
+        flow = (await _start_flow(hass))["flow_id"]
+        await hass.config_entries.flow.async_configure(flow, {"next_step_id": "spot"})
+        result = await hass.config_entries.flow.async_configure(flow, {"next_step_id": "spot_final_no"})
+        result = await hass.config_entries.flow.async_configure(
+            flow, {"price_entity": SPOT, "markup": 0.5, "distribution_vt": 1.5, "distribution_nt": 0.5, "vat": 21}
+        )
+        assert result["type"] == "menu" and result["step_id"] == "tariff_source"
+        result = await hass.config_entries.flow.async_configure(flow, {"next_step_id": "tariff_cez"})
+        result = await hass.config_entries.flow.async_configure(flow, {"hdo_entity": "sensor.neni_cez"})
+        assert result["errors"] == {"hdo_entity": "invalid_cez"}
+        result = await hass.config_entries.flow.async_configure(flow, {"hdo_entity": "sensor.cez_hdo_raw"})
+        result = await hass.config_entries.flow.async_configure(flow, {"count": "0"})
+        assert result["step_id"] == "summary"
+        text = "\n".join(result["description_placeholders"].values())
+        # 10:00 is NT: (2 + 0.5 + 0.5) * 1.21 = 3.63
+        assert "3,63 Kč/kWh" in text
+        assert "NT dnes: 00:00–08:00, 09:00–12:00, 13:00–15:00, 16:00–19:00, 20:00–24:00" in text
+        result = await hass.config_entries.flow.async_configure(flow, {})
+        o = result["options"]
+        assert o["spot_final"] is False and o["tariff_source"] == "cez" and o["vat"] == 21
+
+
+async def test_wizard_fixed_tariffs(hass: HomeAssistant) -> None:
+    with FLOW_PATCHES[0](), FLOW_PATCHES[1](), FLOW_PATCHES[2](), FLOW_PATCHES[3]():
+        flow = (await _start_flow(hass))["flow_id"]
+        result = await hass.config_entries.flow.async_configure(flow, {"next_step_id": "fixed1"})
+        result = await hass.config_entries.flow.async_configure(flow, {"energy": 3, "distribution": 1, "vat": 21})
+        assert result["step_id"] == "cars"  # single rate: no VT/NT step
+        result = await hass.config_entries.flow.async_configure(flow, {"count": "0"})
+        assert "4,84 Kč/kWh" in result["description_placeholders"]["prices"]
+        result = await hass.config_entries.flow.async_configure(flow, {})
+        assert result["options"]["price_type"] == "fixed1" and result["options"]["tariff_source"] == "none"
+        await hass.config_entries.async_remove(result["result"].entry_id)
+
+        flow = (await _start_flow(hass))["flow_id"]
+        await hass.config_entries.flow.async_configure(flow, {"next_step_id": "fixed2"})
+        result = await hass.config_entries.flow.async_configure(
+            flow, {"energy_vt": 4, "energy_nt": 2, "distribution_vt": 1.5, "distribution_nt": 0.3, "vat": 21}
+        )
+        assert result["step_id"] == "tariff_source"
+        await hass.config_entries.flow.async_configure(flow, {"next_step_id": "tariff_manual"})
+        result = await hass.config_entries.flow.async_configure(flow, {"vt_windows": "8:00-9:00"})
+        result = await hass.config_entries.flow.async_configure(flow, {"count": "0"})
+        prices = result["description_placeholders"]["prices"]
+        assert "VT: **6,66 Kč/kWh**" in prices and "NT: **2,78 Kč/kWh**" in prices
+        assert "NT dnes: 00:00–08:00, 09:00–24:00" in result["description_placeholders"]["tariff"]
+
+
+def test_migration_of_beta6_options() -> None:
+    from custom_components.ecovolter.options import normalize_options
+
+    o = normalize_options(
+        {"scan_interval": 2, "price_type": "sensor", "distribution_vt": 0, "distribution_nt": 0,
+         "hdo_entity": "sensor.cez_hdo_raw", "soc_entity": "sensor.bila", "battery_kwh": 77, "charging_efficiency": 90}
+    )
+    assert o["price_type"] == "spot" and o["spot_final"] is None and o["vat"] == 0
+    assert o["tariff_source"] == "sensor" and o["scan_interval"] == 2
+    assert len(o["cars"]) == 1 and o["cars"][0]["soc_entity"] == "sensor.bila" and o["cars"][0]["battery_kwh"] == 77
+    assert "soc_entity" not in o
+    assert normalize_options({"price_type": "fixed"})["price_type"] == "fixed2"
+    assert normalize_options({})["cars"] == []
+
+
+async def test_multiple_cars_detection_and_targets(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 20, 0, tzinfo=tz)
+    freezer.move_to(start)
+    hass.states.async_set(SPOT, "1", _prices_state(start, [1] * 12).attributes)
+    hass.states.async_set("sensor.bila", "50")
+    hass.states.async_set("sensor.modra", "30")
+    hass.states.async_set("binary_sensor.bila_kabel", "off")
+    hass.states.async_set("sensor.modra_nabijeni", "disconnected")
+    entry, status, settings, pm, ids, patches = await _setup(
+        hass,
+        options={
+            "price_type": "spot", "spot_final": True,
+            "cars": [
+                {"id": "b", "name": "Bílá", "soc_entity": "sensor.bila", "battery_kwh": 50, "plug_entity": "binary_sensor.bila_kabel"},
+                {"id": "m", "name": "Modrá", "soc_entity": "sensor.modra", "battery_kwh": 60, "plug_entity": "sensor.modra_nabijeni"},
+            ],
+        },
+    )
+    coord = entry.runtime_data
+    sched = coord.scheduler
+    car_select = ids["car"]
+
+    async def poll(sec=2):
+        freezer.tick(sec)
+        await coord.async_refresh()
+        await hass.async_block_till_done()
+
+    try:
+        assert hass.states.get(car_select).attributes["options"] == ["Bílá", "Modrá", "other"]
+        assert hass.states.get(car_select).state == "Bílá"
+        # per-car targets
+        await hass.services.async_call("number", "set_value", {"entity_id": ids["target_soc"], "value": 70}, blocking=True)
+        await hass.services.async_call("select", "select_option", {"entity_id": car_select, "option": "Modrá"}, blocking=True)
+        await hass.services.async_call("number", "set_value", {"entity_id": ids["target_soc"], "value": 90}, blocking=True)
+        assert sched.target_soc == 90
+        await hass.services.async_call("select", "select_option", {"entity_id": car_select, "option": "Bílá"}, blocking=True)
+        assert sched.target_soc == 70
+        assert float(hass.states.get(ids["target_soc"]).state) == 70
+
+        # Modrá gets plugged in: its own sensor says "charging" -> detected
+        status["isVehicleConnected"] = False
+        await poll()
+        status["isVehicleConnected"] = True
+        await poll()
+        hass.states.async_set("sensor.modra_nabijeni", "Charging")
+        await poll()
+        assert hass.states.get(car_select).state == "Modrá"
+        assert sched.needed_kwh_soc() == pytest.approx((90 - 30) / 100 * 60 / 0.9)
+
+        # next session: no car reports the cable within 2 min -> ask in the card
+        hass.states.async_set("sensor.modra_nabijeni", "disconnected")
+        status["isVehicleConnected"] = False
+        await poll()
+        status["isVehicleConnected"] = True
+        await poll()
+        await poll(130)
+        assert sched.car_ambiguous is True
+        assert hass.states.get(car_select).attributes["ambiguous"] is True
+        await hass.services.async_call("select", "select_option", {"entity_id": car_select, "option": "Bílá"}, blocking=True)
+        assert sched.car_ambiguous is False
+
+        # "other" car: % target not possible
+        await hass.services.async_call("select", "select_option", {"entity_id": car_select, "option": "other"}, blocking=True)
+        sched.set_option("target_type", "soc")
+        sched.set_option("mode", "cheapest")
+        assert sched.reason == "no_soc"
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()
 
 
 def test_cez_raw_hdo_schedule() -> None:

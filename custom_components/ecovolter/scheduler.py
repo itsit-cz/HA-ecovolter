@@ -19,6 +19,15 @@ from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
+from .options import (
+    PRICE_FIXED1,
+    PRICE_FIXED2,
+    PRICE_SPOT,
+    TARIFF_NONE,
+    normalize_options,
+    vat_factor,
+)
+
 if TYPE_CHECKING:
     from .coordinator import EcoVolterCoordinator
 
@@ -35,9 +44,7 @@ TARGET_ENERGY = "energy"
 TARGET_SOC = "soc"
 TARGET_TYPES = [TARGET_HOURS, TARGET_ENERGY, TARGET_SOC]
 
-PRICE_SENSOR = "sensor"  # spot / final-price sensor
-PRICE_FIXED = "fixed"  # fixed two-rate tariff (VT/NT)
-PRICE_TYPES = [PRICE_SENSOR, PRICE_FIXED]
+CAR_OTHER = "other"
 
 READY_TODAY = "today"  # nearest occurrence of the time (repeats daily)
 READY_TOMORROW = "tomorrow"
@@ -50,6 +57,8 @@ MIN_COMMAND_INTERVAL = 30
 # After the car is plugged in, the charger may enable charging on its own for
 # the new session. Changes in this window are not treated as manual overrides.
 PLUG_IN_GRACE_SECONDS = 90
+# How long after plug-in to wait for a car's own "cable connected" sensor.
+CAR_DETECT_SECONDS = 120
 # Phase voltage used to estimate charging power from current.
 PHASE_VOLTAGE = 230
 # Price sensors this integration knows how to read, in order of preference.
@@ -145,9 +154,9 @@ def price_list_attribute(state: State | None) -> list[dict[str, Any]] | None:
 
 
 def _slots_from_list(
-    items: list[dict[str, Any]], factor: float, vt_windows: Any
+    items: list[dict[str, Any]], factor: float, vt_windows: Any, field: str = "price"
 ) -> list[PriceSlot]:
-    """Final prices (already incl. VAT and distribution) – no distribution is added."""
+    """Prices from a list attribute; `field` = "price" (final) or "spot" (raw spot)."""
     points: list[tuple[datetime, float, bool, datetime | None]] = []
     for item in items:
         if not isinstance(item, dict):
@@ -157,7 +166,7 @@ def _slots_from_list(
         if not isinstance(start, datetime):
             continue
         try:
-            price = float(item["price"]) * factor
+            price = float(item[field] if field in item else item["price"]) * factor
         except (KeyError, TypeError, ValueError):
             continue
         end = item.get("end")
@@ -482,12 +491,89 @@ def slot_at(slots: list[PriceSlot], moment: datetime) -> PriceSlot | None:
 # --------------------------------------------------------- Home Assistant
 
 
+def build_tariff(hass: HomeAssistant, o: dict[str, Any], now: datetime) -> Any:
+    """VT/NT model for normalized options."""
+    if o["price_type"] == PRICE_FIXED1 or o["tariff_source"] == TARIFF_NONE:
+        return lambda _moment: True  # single rate: always "low"
+    try:
+        windows = parse_vt_windows(o.get("vt_windows"))
+    except ValueError:
+        windows = []
+    if not o.get("hdo_entity"):
+        return windows
+    state = hass.states.get(o["hdo_entity"])
+    hdo_now = None
+    if state is not None and state.domain == "binary_sensor" and state.state in ("on", "off"):
+        hdo_now = state.state == "on"  # on = low tariff (NT) active
+    return TariffModel(windows, parse_hdo_windows(state), hdo_now, now)
+
+
+def build_slots(
+    hass: HomeAssistant,
+    o: dict[str, Any],
+    tariff: Any,
+    now: datetime,
+    until: datetime,
+    price_entity: str | None,
+) -> list[PriceSlot]:
+    """Price slots incl. VAT for normalized options."""
+    f = vat_factor(o)
+    if o["price_type"] in (PRICE_FIXED1, PRICE_FIXED2):
+        return fixed_tariff_slots(
+            now - timedelta(minutes=15), until, tariff,
+            o["energy_vt"] * f, o["energy_nt"] * f,
+            o["distribution_vt"] * f, o["distribution_nt"] * f,
+        )
+    state = hass.states.get(price_entity) if price_entity else None
+    if state is None:
+        return []
+    final = o["spot_final"] if o["spot_final"] is not None else price_list_attribute(state) is not None
+    if final:
+        return parse_prices(state, vt_windows=tariff)
+    unit = str(state.attributes.get("unit_of_measurement") or "")
+    factor = 0.001 if "MWh" in unit else 1.0
+    items = price_list_attribute(state)
+    raw = (
+        _slots_from_list(items, factor, tariff, field="spot")
+        if items is not None
+        else parse_prices(state, vt_windows=tariff)
+    )
+    return [
+        PriceSlot(
+            start=s.start,
+            end=s.end,
+            spot=(s.spot + o["markup"]) * f,
+            distribution=(o["distribution_nt"] if s.low_tariff else o["distribution_vt"]) * f,
+            low_tariff=s.low_tariff,
+        )
+        for s in raw
+    ]
+
+
+def nt_windows_text(tariff: Any, day: datetime) -> str:
+    """'00:00–08:00, 09:00–12:00 …' – NT windows of one day (15-min resolution)."""
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    parts, open_at = [], None
+    for i in range(97):
+        t = start + timedelta(minutes=15 * i)
+        low = _low(t, tariff) if i < 96 else False
+        if low and open_at is None:
+            open_at = t
+        elif not low and open_at is not None:
+            end = "24:00" if i == 96 else t.strftime("%H:%M")
+            parts.append(f"{open_at.strftime('%H:%M')}–{end}")
+            open_at = None
+    return ", ".join(parts) or "—"
+
+
 DEFAULT_CONFIG: dict[str, Any] = {
     "mode": MODE_MANUAL,
     "target_type": TARGET_HOURS,
     "target_hours": 3.0,
     "target_energy": 20.0,
-    "target_soc": 80.0,
+    "target_soc": 80.0,  # default for cars without their own target
+    "car": None,  # selected car id, "other", or None = first car
+    "car_targets": {},  # car id -> target %
     "ready_by": "07:00",
     # Fixed date for the deadline (YYYY-MM-DD) chosen as "tomorrow"/"day after";
     # None = nearest occurrence of ready_by. Cleared once that deadline passes.
@@ -511,20 +597,26 @@ class EcoVolterScheduler:
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"ecovolter.scheduler.{entry_id}"
         )
-        num = lambda key, default=0.0: float(options.get(key, default) or default)  # noqa: E731
-        self.price_type: str = options.get("price_type") or PRICE_SENSOR
-        self.price_entity: str | None = options.get("price_entity") or None
-        self.dist_vt = num("distribution_vt")
-        self.dist_nt = num("distribution_nt")
-        self.energy_vt = num("energy_vt")
-        self.energy_nt = num("energy_nt")
-        self.hdo_entity: str | None = options.get("hdo_entity") or None
-        self.soc_entity: str | None = options.get("soc_entity") or None
-        self.battery_kwh = num("battery_kwh", 0.0)
-        self.efficiency = min(100.0, max(50.0, num("charging_efficiency", 90.0))) / 100
+        options = normalize_options(options)
+        self.options = options
+        self.price_type: str = options["price_type"]
+        self.price_entity: str | None = options["price_entity"]
+        self.spot_final: bool | None = options["spot_final"]
+        self.markup = options["markup"]
+        self.vat = vat_factor(options)
+        self.dist_vt = options["distribution_vt"]
+        self.dist_nt = options["distribution_nt"]
+        self.energy_vt = options["energy_vt"]
+        self.energy_nt = options["energy_nt"]
+        self.tariff_source = options["tariff_source"]
+        self.hdo_entity: str | None = options["hdo_entity"]
+        self.cars: list[dict[str, Any]] = options["cars"]
+        self.car_ambiguous = False
+        self._car_detect_until = -1e9
+        self._car_manual = False
         self.tariff: Any = None
         try:
-            self.vt_windows = parse_vt_windows(options.get("vt_windows", ""))
+            self.vt_windows = parse_vt_windows(options["vt_windows"])
         except ValueError:
             _LOGGER.warning("EcoVolter: invalid VT windows %r", options.get("vt_windows"))
             self.vt_windows = []
@@ -589,9 +681,19 @@ class EcoVolterScheduler:
 
     @callback
     def set_option(self, key: str, value: Any) -> None:
+        if key == "target_soc" and self.car is not None:
+            # each car keeps its own target %
+            targets = dict(self.config.get("car_targets") or {})
+            if targets.get(self.car["id"]) == value and not self.finished:
+                self._override_desired = None
+                self._last_command = -1e9
+                self.hass.async_create_task(self.async_apply())
+                return
+            targets[self.car["id"]] = value
+            key, value = "car_targets", targets
         rearm = key in (
             "mode", "target_type", "target_hours", "target_energy", "target_soc",
-            "ready_by", "ready_date",
+            "car_targets", "car", "ready_by", "ready_date",
         )
         # Any change of the plan takes control again right away: forget a manual
         # override and do not wait for the command rate limit.
@@ -615,7 +717,7 @@ class EcoVolterScheduler:
             self._override_desired = None
         if key == "mode" and value == MODE_MANUAL:
             self.charge_now = False
-        if key in ("target_type", "target_hours", "target_energy", "target_soc", "ready_by", "ready_date"):
+        if key in ("target_type", "target_hours", "target_energy", "target_soc", "car_targets", "car", "ready_by", "ready_date"):
             # a new target starts a new cycle
             self.cycle_deadline = None
         self._save(1)
@@ -708,23 +810,66 @@ class EcoVolterScheduler:
         value = (self.coordinator.data or {}).get("settings", {}).get("isChargingEnable")
         return None if value is None else bool(value)
 
-    def _build_tariff(self, now: datetime) -> Any:
-        if not self.hdo_entity:
-            return self.vt_windows
-        state = self.hass.states.get(self.hdo_entity)
-        hdo_now = None
-        if state is not None and state.domain == "binary_sensor" and state.state in ("on", "off"):
-            hdo_now = state.state == "on"  # on = low tariff (NT) active
-        return TariffModel(self.vt_windows, parse_hdo_windows(state), hdo_now, now)
+    def is_final_price(self, state: State | None) -> bool:
+        if self.spot_final is not None:
+            return bool(self.spot_final)
+        return price_list_attribute(state) is not None  # migrated: auto
 
-    def soc(self) -> float | None:
-        if not self.soc_entity:
+    def _build_tariff(self, now: datetime) -> Any:
+        return build_tariff(self.hass, self.options, now)
+
+    # ---- cars
+
+    @property
+    def car(self) -> dict[str, Any] | None:
+        car_id = self.config.get("car")
+        if car_id == CAR_OTHER:
             return None
-        state = self.hass.states.get(self.soc_entity)
+        for car in self.cars:
+            if car["id"] == car_id:
+                return car
+        return self.cars[0] if self.cars else None
+
+    def car_soc(self, car: dict[str, Any] | None) -> float | None:
+        if not car or not car.get("soc_entity"):
+            return None
+        state = self.hass.states.get(car["soc_entity"])
         try:
             return float(state.state) if state is not None else None
         except (TypeError, ValueError):
             return None
+
+    @property
+    def target_soc(self) -> float:
+        car = self.car
+        targets = self.config.get("car_targets") or {}
+        if car and car["id"] in targets:
+            return float(targets[car["id"]])
+        return float(self.config["target_soc"])
+
+    @callback
+    def select_car(self, car_id: str, manual: bool = True) -> None:
+        if manual:
+            self._car_manual = True
+            self.car_ambiguous = False
+        self.set_option("car", car_id)
+
+    @staticmethod
+    def _is_plugged(state: State | None) -> bool:
+        if state is None:
+            return False
+        return str(state.state).strip().lower() in {
+            "on", "true", "yes", "1", "connected", "plugged", "plugged_in", "pluggedin",
+            "charging", "připojeno", "nabíjí", "zapojeno", "conn",
+        }
+
+    def _detect_car(self) -> dict[str, Any] | None:
+        candidates = [c for c in self.cars if c.get("plug_entity")]
+        plugged = [c for c in candidates if self._is_plugged(self.hass.states.get(c["plug_entity"]))]
+        return plugged[0] if len(plugged) == 1 else None
+
+    def soc(self) -> float | None:
+        return self.car_soc(self.car)
 
     def resolve_price_entity(self) -> str | None:
         if self.price_entity:
@@ -751,11 +896,12 @@ class EcoVolterScheduler:
     # ---- planning
 
     def needed_kwh_soc(self) -> float | None:
-        current = self.soc()
-        if current is None or self.battery_kwh <= 0:
+        car = self.car
+        current = self.car_soc(car)
+        if car is None or current is None or car["battery_kwh"] <= 0:
             return None
-        missing = float(self.config["target_soc"]) - current
-        return max(0.0, missing / 100 * self.battery_kwh / self.efficiency)
+        missing = self.target_soc - current
+        return max(0.0, missing / 100 * car["battery_kwh"] / (car["efficiency"] / 100))
 
     def needed_seconds(self) -> float:
         if self.finished:
@@ -781,22 +927,15 @@ class EcoVolterScheduler:
             self._save(1)
 
         self.tariff = self._build_tariff(now)
-        if self.price_type == PRICE_FIXED:
-            self.slots = fixed_tariff_slots(
-                now - timedelta(minutes=15),
-                max(deadline, now + timedelta(hours=24)),
-                self.tariff,
-                self.energy_vt, self.energy_nt, self.dist_vt, self.dist_nt,
-            )
-        else:
-            entity_id = self.resolve_price_entity()
-            state = self.hass.states.get(entity_id) if entity_id else None
-            self.slots = parse_prices(
-                state, dist_vt=self.dist_vt, dist_nt=self.dist_nt, vt_windows=self.tariff
-            )
+        f = self.vat
+        self.slots = build_slots(
+            self.hass, self.options, self.tariff, now,
+            max(deadline, now + timedelta(hours=24)),
+            self.resolve_price_entity() if self.price_type == PRICE_SPOT else None,
+        )
         prices_until = self.slots[-1].end if self.slots else None
         horizon = extend_with_estimate(
-            self.slots, deadline, self.tariff, self.dist_vt, self.dist_nt
+            self.slots, deadline, self.tariff, self.dist_vt * f, self.dist_nt * f
         ) if self.slots and self.slots[-1].end > now else self.slots
         max_price = float(self.config["max_price"] or 0) or None
         self.plan = build_plan(
@@ -868,9 +1007,41 @@ class EcoVolterScheduler:
             self._plugged_at = now_m
             self._override_desired = None
             self._last_command = -1e9
+            # find out which car it is (its own integration reports the cable)
+            self._car_detect_until = now_m + CAR_DETECT_SECONDS
+            self._car_manual = False
+            self.car_ambiguous = False
+        if not connected and self._was_connected:
+            self.car_ambiguous = False
         self._was_connected = connected
+        self._detect_car_tick(now_m)
         self.recalculate(dt_util.now())
         self.hass.async_create_task(self.async_apply())
+
+    def _detect_car_tick(self, now_m: float) -> None:
+        if not any(c.get("plug_entity") for c in self.cars):
+            return
+        if self._car_manual or self._car_detect_until < 0:
+            return
+        found = self._detect_car()
+        if found is not None:
+            self._car_detect_until = -1e9
+            self.car_ambiguous = False
+            if found["id"] != (self.car or {}).get("id"):
+                _LOGGER.info("EcoVolter: detected car %s", found["name"])
+                # a different car than the one with a finished plan -> new plan
+                if self.finished:
+                    self.finished = False
+                    self.delivered_seconds = 0.0
+                    self.delivered_kwh = 0.0
+                self.config["car"] = found["id"]
+                self.cycle_deadline = None
+                self._save(1)
+            return
+        if now_m > self._car_detect_until:
+            self._car_detect_until = -1e9
+            self.car_ambiguous = True  # card asks which car it is
+            _LOGGER.info("EcoVolter: could not tell which car is plugged in")
 
     @callback
     def note_manual_change(self, enabled: bool) -> None:
@@ -929,7 +1100,13 @@ class EcoVolterScheduler:
         return {
             "mode": self.mode,
             "reason": self.reason,
-            "price_entity": self.resolve_price_entity() if self.price_type == PRICE_SENSOR else None,
+            "price_entity": self.resolve_price_entity() if self.price_type == PRICE_SPOT else None,
+            "cars": [
+                {"id": c["id"], "name": c["name"], "soc": self.car_soc(c), "has_soc": bool(c.get("soc_entity") and c["battery_kwh"] > 0)}
+                for c in self.cars
+            ],
+            "car": (self.car or {}).get("id", CAR_OTHER if self.cars else None),
+            "car_ambiguous": self.car_ambiguous,
             "deadline": self.plan.deadline.isoformat() if self.plan.deadline else None,
             "needed_minutes": round(self.plan.needed_seconds / 60),
             "planned_minutes": round(self.plan.planned_seconds / 60),
@@ -937,7 +1114,7 @@ class EcoVolterScheduler:
             "finished": self.finished,
             "price_type": self.price_type,
             "soc": self.soc(),
-            "target_soc": float(self.config["target_soc"]),
+            "target_soc": self.target_soc,
             "needed_kwh": (
                 round(self.needed_kwh_soc(), 2)
                 if self.config["target_type"] == TARGET_SOC and self.needed_kwh_soc() is not None

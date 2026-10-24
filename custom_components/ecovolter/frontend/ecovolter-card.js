@@ -49,6 +49,7 @@ const KEY_MAP = {
   "time:ready_by": "ready_by",
   "select:ready_day": "ready_day",
   "button:charge_again": "charge_again",
+  "select:car": "car",
   "sensor:charging_plan": "charging_plan",
   "sensor:current_total_price": "current_total_price",
   "binary_sensor:scheduled_now": "scheduled_now",
@@ -77,6 +78,7 @@ const T = {
     limitInfo: "Nabíjí se, kdykoli je cena pod limitem.", chargingNow: "nabíjí se podle plánu", waiting: "čeká na levný úsek",
     vt: "VT", currency: "Kč", est: "odhad", until: "do",
     days: { today: "Dnes", tomorrow: "Zítra", day_after: "Pozítří" },
+    otherCar: "Jiné", whichCar: "Které auto je připojené?",
     car: "Auto", noSoc: "Chybí stav baterie auta – nastavte senzor a kapacitu baterie v Možnostech integrace (krok Auto)",
     chargeAgain: "Nabít znovu", doneHint: "Po odpojení a připojení auta se nabíjení samo nespustí.",
     awaitPrices: "část plánu po {t} je odhad – upřesní se po zveřejnění cen na další den (kolem 14:00)",
@@ -100,6 +102,7 @@ const T = {
     limitInfo: "Charges whenever the price is below the limit.", chargingNow: "charging as planned", waiting: "waiting for a cheap slot",
     vt: "VT", currency: "CZK", est: "estimate", until: "by",
     days: { today: "Today", tomorrow: "Tomorrow", day_after: "Day after" },
+    otherCar: "Other", whichCar: "Which car is plugged in?",
     car: "Car", noSoc: "Car battery level missing – set the sensor and battery capacity in the integration options (Car step)",
     chargeAgain: "Charge again", doneHint: "Re-plugging the car will not start charging on its own.",
     awaitPrices: "part of the plan after {t} is an estimate – refined when tomorrow's prices are published (around 14:00)",
@@ -168,10 +171,18 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
 .amp-value span{font-weight:600;margin-left:3px}
 .section{margin:16px 0 8px;font-weight:600}
 .msg{padding:18px}
+.cars{margin-top:12px}
+.cars .ask{font-size:13px;color:var(--warning-color,#e69500);margin-bottom:6px;font-weight:600}
+.cars .ask[hidden]{display:none}
+.car-row{display:flex;gap:6px;flex-wrap:wrap}
+.car-row button{flex:1 1 0;min-width:0;padding:9px 6px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:2px}
+.car-row button small{margin:0;font-size:11px;opacity:.8}
+.cars.ambiguous .car-row button{outline:2px dashed var(--warning-color,#e69500);outline-offset:-2px}
 .sched{margin-top:16px;padding-top:14px;border-top:1px solid var(--divider-color)}
 .sched-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
 .sched-head b{font-size:15px}.sched-head span{font-size:13px;opacity:.75}
-.modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.modes{display:flex;gap:6px}
+.modes button{flex:1 1 0;min-width:0}
 .modes button{padding:10px 4px;font-size:13px}
 .params{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) minmax(0,1fr);gap:8px;margin-top:10px}
 .params[hidden]{display:none}
@@ -210,7 +221,7 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
   #pMax{grid-column:1 / -1}
   .params #pMax:only-of-type{grid-column:auto}
 }
-@media(max-width:380px){.grid,.modes{grid-template-columns:repeat(2,minmax(0,1fr))}.params{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.modes{flex-wrap:wrap}.modes button{flex:1 1 40%}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.params{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 class EcoVolterCard extends HTMLElement {
@@ -377,6 +388,7 @@ class EcoVolterCard extends HTMLElement {
         <div class="status" id="status"></div>
       </div><ha-icon id="icon" icon="mdi:ev-station"></ha-icon></div>
       ${minimal ? "" : `<div class="grid">${tile("power", t.power)}${tile("session_energy", t.session)}${tile("active_phases", t.phases)}${tile("configured_current", t.configured)}</div>`}
+      ${this._carsHtml()}
       <div class="switches">
         <button id="charge">⚡ ${esc(t.charge)}</button>
         <button id="phase">〰 ${esc(t.phase)}</button>
@@ -389,6 +401,34 @@ class EcoVolterCard extends HTMLElement {
     this._bind();
     this._built = true;
     this._update();
+  }
+
+  _carsHtml() {
+    const s = this._s("car");
+    const opts = s?.attributes?.options || [];
+    this._carSig = opts.join("|");
+    if (opts.length < 2) return "";
+    const t = this._t;
+    return `<div class="cars" id="cars"><div class="ask" id="carAsk" hidden>🚗 ${esc(t.whichCar)}</div><div class="car-row">${opts
+      .map((o) => `<button data-car="${esc(o)}">${o === "other" ? esc(t.otherCar) : "🚗 " + esc(o)}<small data-carsoc="${esc(o)}"></small></button>`)
+      .join("")}</div></div>`;
+  }
+
+  _updateCars() {
+    const root = this.shadowRoot, box = root.getElementById("cars");
+    const s = this._s("car");
+    if ((s?.attributes?.options || []).join("|") !== this._carSig) { this._built = false; this._render(); return; }
+    if (!box) return;
+    const sel = this._effective("car", s.state);
+    box.classList.toggle("ambiguous", !!s.attributes.ambiguous);
+    root.getElementById("carAsk").hidden = !s.attributes.ambiguous;
+    const cars = this._s("charging_plan")?.attributes?.cars || [];
+    root.querySelectorAll("[data-car]").forEach((b) => b.classList.toggle("on", b.dataset.car === sel));
+    root.querySelectorAll("[data-carsoc]").forEach((el) => {
+      const car = cars.find((c) => c.name === el.dataset.carsoc);
+      const txt = car && car.soc != null ? `${Math.round(car.soc)} %` : "";
+      if (el.textContent !== txt) el.textContent = txt;
+    });
   }
 
   _showScheduler() {
@@ -485,7 +525,10 @@ class EcoVolterCard extends HTMLElement {
     root.getElementById("tgtHoursWrap").hidden = tt !== "hours";
     root.getElementById("tgtEnergyWrap").hidden = tt !== "energy";
     root.getElementById("tgtSocWrap").hidden = tt !== "soc";
-    root.querySelector("[data-tt=soc]").hidden = !this._s("target_soc");
+    const planA = this._s("charging_plan")?.attributes || {};
+    const selCar = (planA.cars || []).find((c) => c.id === planA.car);
+    root.querySelector("[data-tt=soc]").hidden = !this._s("target_soc") || !(selCar ? selCar.has_soc : false);
+    root.querySelector("[data-mode=low_tariff]").hidden = planA.price_type === "fixed1";
 
     const syncNum = (id, key) => {
       const el = root.getElementById(id), s = this._s(key);
@@ -620,6 +663,8 @@ class EcoVolterCard extends HTMLElement {
 
   _bind() {
     this._bindScheduler();
+    this.shadowRoot.querySelectorAll("[data-car]").forEach((b) =>
+      b.addEventListener("click", () => this._setSelect("car", b.dataset.car)));
     const $ = (id) => this.shadowRoot.getElementById(id);
     $("charge").addEventListener("click", () => this._toggle("charging_enabled"));
     $("phase").addEventListener("click", () => this._toggle("three_phase"));
@@ -714,6 +759,7 @@ class EcoVolterCard extends HTMLElement {
       root.getElementById("plus").disabled = disabled;
       if (!this._editing && amp != null && input.value !== String(amp)) input.value = String(amp);
     }
+    this._updateCars();
     this._updateScheduler();
   }
 
