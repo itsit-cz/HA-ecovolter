@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import EcoVolterConfigEntry
 from .entity import EcoVolterEntity
-from .scheduler import MODES, TARGET_TYPES
+from .scheduler import MODES, READY_DAYS, TARGET_TYPES
 
 
 async def async_setup_entry(
@@ -22,6 +22,7 @@ async def async_setup_entry(
         [
             EcoVolterSchedulerSelect(coordinator, entry.entry_id, entry.title, "charging_mode", "mode", MODES),
             EcoVolterSchedulerSelect(coordinator, entry.entry_id, entry.title, "target_type", "target_type", TARGET_TYPES),
+            EcoVolterReadyDaySelect(coordinator, entry.entry_id, entry.title),
         ]
     )
 
@@ -46,3 +47,26 @@ class EcoVolterSchedulerSelect(EcoVolterEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         self.coordinator.scheduler.set_option(self._option, option)
+
+
+class EcoVolterReadyDaySelect(EcoVolterEntity, SelectEntity):
+    """Day of the "ready by" deadline: today (nearest), tomorrow, day after."""
+
+    _attr_translation_key = "ready_day"
+    _attr_icon = "mdi:calendar-today"
+    _attr_options = list(READY_DAYS)
+
+    def __init__(self, coordinator, entry_id, device_name):
+        super().__init__(coordinator, entry_id, device_name)
+        self._attr_unique_id = f"{entry_id}_ready_day"
+
+    @property
+    def current_option(self) -> str:
+        return self.coordinator.scheduler.ready_day()
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    async def async_select_option(self, option: str) -> None:
+        self.coordinator.scheduler.set_ready_day(option)

@@ -130,12 +130,16 @@ V kartě **EcoVolter** je sekce **Plánovač** (u varianty Minimalistic ji zapn�
 | **Pod limit** | nabíjí, kdykoli je cena pod limitem | *Max. cena* |
 | **Jen NT** | nabíjí jen v nízkém tarifu | časy VT v kroku 2 |
 
-Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`. Pod tlačítky se zobrazí plán („Naplánováno 3 h · start 01:15 · odhad 25 Kč“) a časová osa cen, kde jsou vybrané úseky zvýrazněné.
+Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`.
+
+*Hotovo do* má i výběr dne: **Dnes** znamená nejbližší výskyt daného času (opakuje se každý den), **Zítra** a **Pozítří** nastaví pevný den. Když je teď 12:00 a chcete nabito zítra v 15:00, zvolte *Zítra* a `15:00`. Po uplynutí pevného termínu se plánovač vrátí k denní variantě. Pod tlačítky se zobrazí plán („Naplánováno 3 h · start 01:15 · odhad 25 Kč“) a časová osa cen, kde jsou vybrané úseky zvýrazněné.
 
 ### Jak se chová
 
 - Plán se přepočítává průběžně, také když kolem 14:00 přijdou ceny na zítřek a když se změní cíl nebo termín.
-- Nabitý čas/energie se počítá od posledního termínu *Hotovo do*. Po termínu začíná nový cyklus.
+- **Po splnění cíle je plánovač hotový** a sám už nabíjení nespustí: ani po odjetí a novém připojení auta, ani po uplynutí termínu. Nový plán se spustí, až nastavíte cíl, termín nebo režim (stačí i stejná hodnota, např. z denní automatizace), nebo tlačítkem **Nabít znovu** v kartě (entita *Nabít znovu*).
+- Když si nabíječka při připojení auta sama povolí nabíjení, plánovač to nebere jako ruční zásah a nabíjení podle plánu hned zase vypne.
+- Nabitý čas/energie se počítá od posledního termínu *Hotovo do*.
 - Cíl v kWh se přepočítává na čas podle aktuálního výkonu (nebo podle nastaveného proudu a fází), je to odhad.
 - Když nabíjení ručně zapnete/vypnete (vypínač v HA, aplikace EcoVolter), plánovač to respektuje, dokud plán sám nezmění rozhodnutí (např. do začátku dalšího úseku).
 - Pokud do termínu nestačí čas (nebo úseky pod limitem), karta ukáže varování, kolik se stihne.

@@ -1,7 +1,7 @@
 """Constants for EcoVolter."""
 
 DOMAIN = "ecovolter"
-PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "select", "time"]
+PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "select", "time", "button"]
 
 CONF_SECRET = "secret"
 CONF_SCAN_INTERVAL = "scan_interval"
