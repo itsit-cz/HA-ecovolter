@@ -22,7 +22,7 @@ Custom Home Assistant integration for EcoVolter chargers using the local API.
 - Set charging current from 6 to 16 A
 - Czech and English Home Assistant UI
 - Dedicated EcoVolter card: Minimalistic / Compact / Detailed, charger selection and CZ/EN
-- Live telemetry refreshed every 1 second
+- Live telemetry refreshed every 2 seconds (configurable 1–60 s in the integration options)
 - Charger settings read separately and controlled through PATCH
 - Serialized API requests for more reliable communication
 
@@ -50,6 +50,10 @@ Enter:
 ## Hostname / DNS behaviour
 
 When a hostname is configured, the integration resolves it and caches the resulting IP address. Normal API calls then go directly to that IP for faster communication.
+
+If the charger stops responding, polling backs off (up to 30 s) so it can recover. After 60 s without a response, entities become unavailable instead of showing frozen values.
+
+After updating, if the mobile Companion app still shows the old card, use *Settings → Companion app → Troubleshooting → Reset frontend cache* or restart the app.
 
 The hostname is re-resolved every 60 minutes. If a request fails because of a network/connection error, the integration immediately resolves the hostname again and retries once. Authentication failures do not trigger DNS retries.
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.3.0 — 2026-10-24
+
+Stability and mobile fixes.
+
+Integration
+- Fixed periodic freezes: every request now uses a fresh connection (`Connection: close`); the charger's web server hung on reused keep-alive sockets.
+- Timeouts are no longer retried against the same IP (a hang used to block all other requests for up to 8 s).
+- Garbled or truncated JSON responses are handled instead of failing the whole refresh.
+- When the charger stops responding, polling backs off up to 30 s and settings/diagnostic reads are skipped so the charger can recover.
+- After 60 s without a successful status read, entities become unavailable instead of showing frozen values.
+- Default refresh interval changed from 1 s to 2 s; configurable 1–60 s in the integration options.
+- Settings are verified 10 s after a write (previously up to 60 s).
+- Failed writes show a clear error in Home Assistant.
+- Card URL is cache-busted by file content so browsers and the Companion app load the new card.
+
+Card
+- Card no longer rebuilds its whole DOM on every Home Assistant update; taps on mobile were lost and the slider jumped back.
+- Works for non-admin users (entities are found via `hass.entities` instead of the admin-only registry API).
+- Styles are isolated in Shadow DOM and no longer leak into other dashboard cards.
+- Optimistic switch/current values expire after 15 s if the charger does not confirm them.
+- + / − taps are debounced into a single request.
+- Shows "charger unavailable" and disables controls when the charger is offline.
+- Failed commands revert the control and show a notification.
+- HTML in device/card names is escaped.
+
 ## v0.2.1 — 2026-09-29
 
 - Added the Minimalistic card layout for a compact charger overview and control.

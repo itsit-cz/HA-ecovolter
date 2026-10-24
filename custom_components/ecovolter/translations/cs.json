@@ -79,5 +79,16 @@
         "name": "Nabíjecí proud"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Možnosti",
+        "description": "Interval obnovy živého stavu (sekundy). Doporučeno 2 s; 1 s může některé nabíječky přetěžovat.",
+        "data": {
+          "scan_interval": "Interval obnovy (s)"
+        }
+      }
+    }
   }
 }
