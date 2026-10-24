@@ -113,6 +113,14 @@
           "hours": "Hours",
           "energy": "Energy (kWh)"
         }
+      },
+      "ready_day": {
+        "name": "Ready day",
+        "state": {
+          "today": "Today (nearest)",
+          "tomorrow": "Tomorrow",
+          "day_after": "Day after tomorrow"
+        }
       }
     },
     "time": {

@@ -130,7 +130,9 @@ V kartě **EcoVolter** je sekce **Plánovač** (u varianty Minimalistic ji zapn�
 | **Pod limit** | nabíjí, kdykoli je cena pod limitem | *Max. cena* |
 | **Jen NT** | nabíjí jen v nízkém tarifu | časy VT v kroku 2 |
 
-Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`. Pod tlačítky se zobrazí plán („Naplánováno 3 h · start 01:15 · odhad 25 Kč“) a časová osa cen, kde jsou vybrané úseky zvýrazněné.
+Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`.
+
+*Hotovo do* má i výběr dne: **Dnes** znamená nejbližší výskyt daného času (opakuje se každý den), **Zítra** a **Pozítří** nastaví pevný den. Když je teď 12:00 a chcete nabito zítra v 15:00, zvolte *Zítra* a `15:00`. Po uplynutí pevného termínu se plánovač vrátí k denní variantě. Pod tlačítky se zobrazí plán („Naplánováno 3 h · start 01:15 · odhad 25 Kč“) a časová osa cen, kde jsou vybrané úseky zvýrazněné.
 
 ### Jak se chová
 

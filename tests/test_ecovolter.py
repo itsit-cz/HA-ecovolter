@@ -213,8 +213,8 @@ async def test_setup_entities_and_options(hass: HomeAssistant) -> None:
         reg = er.async_get(hass)
         entries = er.async_entries_for_config_entry(reg, entry.entry_id)
         states = [hass.states.get(e.entity_id) for e in entries]
-        # 18 charger entities + 9 scheduler entities
-        assert len(states) == 27
+        # 18 charger entities + 10 scheduler entities
+        assert len(states) == 28
         # without a price sensor only the total price is unavailable
         assert [
             e.translation_key

@@ -113,6 +113,14 @@
           "hours": "Hodiny",
           "energy": "Energie (kWh)"
         }
+      },
+      "ready_day": {
+        "name": "Den dokončení",
+        "state": {
+          "today": "Dnes (nejbližší)",
+          "tomorrow": "Zítra",
+          "day_after": "Pozítří"
+        }
       }
     },
     "time": {

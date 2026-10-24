@@ -34,6 +34,11 @@ TARGET_HOURS = "hours"
 TARGET_ENERGY = "energy"
 TARGET_TYPES = [TARGET_HOURS, TARGET_ENERGY]
 
+READY_TODAY = "today"  # nearest occurrence of the time (repeats daily)
+READY_TOMORROW = "tomorrow"
+READY_DAY_AFTER = "day_after"
+READY_DAYS = [READY_TODAY, READY_TOMORROW, READY_DAY_AFTER]
+
 STORAGE_VERSION = 1
 # Never switch the charger more often than this (except manual commands).
 MIN_COMMAND_INTERVAL = 30
@@ -323,6 +328,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "target_hours": 3.0,
     "target_energy": 20.0,
     "ready_by": "07:00",
+    # Fixed date for the deadline (YYYY-MM-DD) chosen as "tomorrow"/"day after";
+    # None = nearest occurrence of ready_by. Cleared once that deadline passes.
+    "ready_date": None,
     "max_price": 0.0,  # 0 = no limit (in cheapest mode)
 }
 
@@ -411,7 +419,7 @@ class EcoVolterScheduler:
             self._override_desired = None
         if key == "mode" and value == MODE_MANUAL:
             self.charge_now = False
-        if key in ("target_type", "target_hours", "target_energy", "ready_by"):
+        if key in ("target_type", "target_hours", "target_energy", "ready_by", "ready_date"):
             # a new target starts a new cycle
             self.cycle_deadline = None
         self._save(1)
@@ -422,6 +430,39 @@ class EcoVolterScheduler:
     @property
     def mode(self) -> str:
         return self.config["mode"]
+
+    def deadline(self, now: datetime) -> datetime:
+        date_str = self.config.get("ready_date")
+        if date_str:
+            try:
+                day = datetime.strptime(date_str, "%Y-%m-%d").date()
+            except ValueError:
+                day = None
+            if day is not None:
+                fixed = datetime.combine(
+                    day, self.ready_by, tzinfo=dt_util.get_default_time_zone()
+                )
+                if fixed > now:
+                    return fixed
+            # the chosen day is over – back to the daily deadline
+            self.config["ready_date"] = None
+            self._save(1)
+        return next_deadline(now, self.ready_by)
+
+    def ready_day(self, now: datetime | None = None) -> str:
+        now = now or dt_util.now()
+        offset = (self.deadline(now).date() - now.date()).days
+        return {0: READY_TODAY, 1: READY_TOMORROW}.get(offset, READY_DAY_AFTER)
+
+    @callback
+    def set_ready_day(self, day: str) -> None:
+        now = dt_util.now()
+        if day == READY_TODAY:
+            value = None
+        else:
+            offset = 1 if day == READY_TOMORROW else 2
+            value = (now.date() + timedelta(days=offset)).isoformat()
+        self.set_option("ready_date", value)
 
     @property
     def ready_by(self) -> dtime:
@@ -486,7 +527,7 @@ class EcoVolterScheduler:
         return max(0.0, float(self.config["target_hours"]) * 3600 - self.delivered_seconds)
 
     def recalculate(self, now: datetime) -> None:
-        deadline = next_deadline(now, self.ready_by)
+        deadline = self.deadline(now)
         if self.cycle_deadline != deadline.isoformat():
             # new cycle: forget what was charged for the previous deadline
             if self.cycle_deadline is not None:

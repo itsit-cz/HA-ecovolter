@@ -328,3 +328,48 @@ async def test_auto_detects_final_price_sensor(hass: HomeAssistant, freezer) -> 
         await hass.async_block_till_done()
         for p in patches:
             p.stop()
+
+
+async def test_ready_day_tomorrow(hass: HomeAssistant, freezer) -> None:
+    tz = dt_util.get_default_time_zone()
+    start = datetime(2026, 10, 24, 12, 0, tzinfo=tz)
+    freezer.move_to(start)
+    entry, status, settings, pm, ids, patches = await _setup(hass)
+    sched = entry.runtime_data.scheduler
+    try:
+        await hass.services.async_call("time", "set_value", {"entity_id": ids["ready_by"], "time": "15:00:00"}, blocking=True)
+        assert sched.plan.deadline == start.replace(hour=15)
+        assert hass.states.get(ids["ready_day"]).state == "today"
+
+        await hass.services.async_call("select", "select_option", {"entity_id": ids["ready_day"], "option": "tomorrow"}, blocking=True)
+        assert sched.plan.deadline == start.replace(day=25, hour=15)
+        assert hass.states.get(ids["ready_day"]).state == "tomorrow"
+
+        # after midnight the fixed date stays (it does not become "day after")
+        freezer.move_to(start.replace(day=25, hour=1))
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert sched.plan.deadline == start.replace(day=25, hour=15)
+        assert hass.states.get(ids["ready_day"]).state == "today"
+
+        # changing the time keeps the chosen day
+        await hass.services.async_call("time", "set_value", {"entity_id": ids["ready_by"], "time": "16:00:00"}, blocking=True)
+        assert sched.plan.deadline == start.replace(day=25, hour=16)
+
+        # once it passes, back to the daily deadline
+        freezer.move_to(start.replace(day=25, hour=16, minute=30))
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert sched.config["ready_date"] is None
+        assert sched.plan.deadline == start.replace(day=26, hour=16)
+
+        await hass.services.async_call("select", "select_option", {"entity_id": ids["ready_day"], "option": "day_after"}, blocking=True)
+        assert sched.plan.deadline == start.replace(day=27, hour=16)
+        await hass.services.async_call("select", "select_option", {"entity_id": ids["ready_day"], "option": "today"}, blocking=True)
+        assert sched.plan.deadline == start.replace(day=26, hour=16)  # 16:00 today already passed -> nearest
+        assert hass.states.get(ids["ready_day"]).state == "tomorrow"
+    finally:
+        await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+        for p in patches:
+            p.stop()
