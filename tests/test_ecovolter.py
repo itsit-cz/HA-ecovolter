@@ -234,17 +234,9 @@ async def test_setup_entities_and_options(hass: HomeAssistant) -> None:
 
         assert entry.runtime_data.update_interval == timedelta(seconds=2)
         result = await hass.config_entries.options.async_init(entry.entry_id)
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {CONF_SCAN_INTERVAL: 5, "price_type": "sensor"}
-        )
-        assert result["step_id"] == "prices"
-        result = await hass.config_entries.options.async_configure(
-            result["flow_id"], {"distribution_vt": 0, "distribution_nt": 0}
-        )
-        assert result["step_id"] == "tariff"
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {"vt_windows": ""})
-        assert result["step_id"] == "car"
-        result = await hass.config_entries.options.async_configure(result["flow_id"], {})
+        assert result["type"] == "menu"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {"next_step_id": "interval"})
+        result = await hass.config_entries.options.async_configure(result["flow_id"], {CONF_SCAN_INTERVAL: 5})
         await hass.async_block_till_done()
         assert entry.options[CONF_SCAN_INTERVAL] == 5
         assert entry.runtime_data.update_interval == timedelta(seconds=5)

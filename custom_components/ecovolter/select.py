@@ -9,7 +9,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import EcoVolterConfigEntry
 from .entity import EcoVolterEntity
-from .scheduler import MODES, READY_DAYS, TARGET_TYPES
+from .scheduler import CAR_OTHER, MODES, READY_DAYS, TARGET_TYPES
 
 
 async def async_setup_entry(
@@ -25,6 +25,8 @@ async def async_setup_entry(
             EcoVolterReadyDaySelect(coordinator, entry.entry_id, entry.title),
         ]
     )
+    if coordinator.scheduler.cars:
+        async_add_entities([EcoVolterCarSelect(coordinator, entry.entry_id, entry.title)])
 
 
 class EcoVolterSchedulerSelect(EcoVolterEntity, SelectEntity):
@@ -70,3 +72,34 @@ class EcoVolterReadyDaySelect(EcoVolterEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         self.coordinator.scheduler.set_ready_day(option)
+
+
+class EcoVolterCarSelect(EcoVolterEntity, SelectEntity):
+    """Which car is charging (for % targets). Options = car names + "other"."""
+
+    _attr_translation_key = "car"
+    _attr_icon = "mdi:car-electric"
+
+    def __init__(self, coordinator, entry_id, device_name):
+        super().__init__(coordinator, entry_id, device_name)
+        self._attr_unique_id = f"{entry_id}_car"
+        self._attr_options = [c["name"] for c in coordinator.scheduler.cars] + [CAR_OTHER]
+
+    @property
+    def current_option(self) -> str:
+        car = self.coordinator.scheduler.car
+        return car["name"] if car else CAR_OTHER
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def extra_state_attributes(self):
+        sched = self.coordinator.scheduler
+        return {"ambiguous": sched.car_ambiguous, "car_id": (sched.car or {}).get("id", CAR_OTHER)}
+
+    async def async_select_option(self, option: str) -> None:
+        sched = self.coordinator.scheduler
+        car_id = next((c["id"] for c in sched.cars if c["name"] == option), CAR_OTHER)
+        sched.select_car(car_id)

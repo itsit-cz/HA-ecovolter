@@ -76,7 +76,10 @@ class EcoVolterSchedulerNumber(EcoVolterEntity, NumberEntity):
 
     @property
     def native_value(self):
-        return float(self.coordinator.scheduler.config[self._option])
+        sched = self.coordinator.scheduler
+        if self._option == "target_soc":
+            return sched.target_soc  # per selected car
+        return float(sched.config[self._option])
 
     @property
     def available(self) -> bool:

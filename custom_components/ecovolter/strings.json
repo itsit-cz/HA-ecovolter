@@ -9,47 +9,125 @@
           "secret": "API secret"
         }
       },
-      "price_type": {
-        "title": "Electricity price",
-        "description": "How should the charging scheduler calculate the price?",
-        "data": {
-          "price_type": "Price type"
+      "tariff_type": {
+        "title": "Which tariff do you have?",
+        "description": "The scheduler uses it to find the cheapest time.",
+        "menu_options": {
+          "spot": "Spot – price changes every hour / 15 min",
+          "fixed2": "Fixed two-rate (VT / NT)",
+          "fixed1": "Fixed single rate"
         }
       },
-      "prices": {
-        "title": "Prices",
-        "description": "**Sensor:** choose the price sensor (empty = auto-detect a final-price sensor or Czech Energy Spot Prices). Distribution is only added to Czech Energy Spot Prices – leave 0 for a final-price sensor.\n\n**Fixed two-rate tariff:** energy and distribution price per kWh in VT and NT incl. VAT. For a single rate enter the same prices for VT and NT.",
+      "spot": {
+        "title": "Spot price",
+        "description": "Do you have a sensor with the **final price** – incl. distribution and VAT?",
+        "menu_options": {
+          "spot_final_yes": "Yes – I have the final price",
+          "spot_final_no": "No – only the spot price"
+        }
+      },
+      "spot_final_yes": {
+        "title": "Final price sensor",
+        "description": "Choose the sensor whose price already includes distribution and VAT. If it also states the tariff (VT/NT), the next step is skipped.",
         "data": {
-          "price_entity": "Price sensor",
+          "price_entity": "Final price sensor"
+        }
+      },
+      "spot_final_no": {
+        "title": "Spot price and fees",
+        "description": "Enter all prices **excl. VAT**. Final price = (spot + markup + distribution) × VAT – shown in the summary.",
+        "data": {
+          "price_entity": "Spot price sensor (e.g. Czech Energy Spot Prices)",
+          "markup": "Supplier markup (CZK/kWh excl. VAT)",
+          "distribution_vt": "Distribution VT (CZK/kWh excl. VAT)",
+          "distribution_nt": "Distribution NT (CZK/kWh excl. VAT)",
+          "vat": "VAT (%)"
+        }
+      },
+      "fixed2": {
+        "title": "Fixed two-rate tariff",
+        "description": "Prices per kWh **excl. VAT**; final prices are shown in the summary.",
+        "data": {
           "energy_vt": "Energy VT (CZK/kWh)",
           "energy_nt": "Energy NT (CZK/kWh)",
           "distribution_vt": "Distribution VT (CZK/kWh)",
-          "distribution_nt": "Distribution NT (CZK/kWh)"
+          "distribution_nt": "Distribution NT (CZK/kWh)",
+          "vat": "VAT (%)"
         }
       },
-      "tariff": {
-        "title": "Low and high tariff (HDO)",
-        "description": "HDO sensor: for ČEZ choose the \"Raw data\" sensor (7-day NT schedule). A sensor with a start/end window list or a \"low tariff active\" binary sensor (on = NT, current state only) also works. VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
+      "fixed1": {
+        "title": "Fixed single rate",
+        "description": "Prices per kWh **excl. VAT**; the final price is shown in the summary.",
+        "data": {
+          "energy": "Energy (CZK/kWh)",
+          "distribution": "Distribution (CZK/kWh)",
+          "vat": "VAT (%)"
+        }
+      },
+      "tariff_source": {
+        "title": "Where do low and high tariff come from?",
+        "description": "NT/VT times are needed for prices and the Low tariff only mode.",
+        "menu_options": {
+          "tariff_cez": "ČEZ Distribuce (7-day HDO schedule)",
+          "tariff_sensor": "Other HDO sensor",
+          "tariff_manual": "Enter times manually"
+        }
+      },
+      "tariff_cez": {
+        "title": "ČEZ Distribuce",
+        "description": "Choose the **raw data** sensor of the ČEZ HDO integration (e.g. `sensor.cez_hdo_raw_data_…`). The NT schedule is read 7 days ahead.",
+        "data": {
+          "hdo_entity": "ČEZ HDO raw data sensor"
+        }
+      },
+      "tariff_sensor": {
+        "title": "HDO sensor",
+        "description": "A \"low tariff active\" binary sensor (on = NT) or a sensor with a start/end window list. A binary sensor only knows the current state – add VT times for planning ahead.",
         "data": {
           "hdo_entity": "HDO sensor",
-          "vt_windows": "High tariff (VT) windows"
+          "vt_windows": "VT times (optional, e.g. 8:00-9:00, 16:00-17:00)"
+        }
+      },
+      "tariff_manual": {
+        "title": "High tariff times",
+        "description": "When the **high tariff (VT)** applies, comma separated. All other time is NT.",
+        "data": {
+          "vt_windows": "VT times, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00"
+        }
+      },
+      "cars": {
+        "title": "Cars",
+        "description": "How many cars do you charge with this charger? Cars enable % targets and detecting which car is plugged in.",
+        "data": {
+          "count": "Number of cars"
         }
       },
       "car": {
-        "title": "Car (optional)",
-        "description": "For charging to a target %: the car's battery level sensor, battery capacity and charging efficiency (losses, typically 85–92 %).",
+        "title": "Car {number} of {count}",
+        "description": "The **battery sensor** (from the car's integration) enables % targets. The **plug sensor** (e.g. \"charging cable connected\" or \"charging\") tells which car is plugged in. Both optional.",
         "data": {
-          "soc_entity": "Car battery level (%)",
+          "name": "Name",
+          "soc_entity": "Battery level sensor (%)",
           "battery_kwh": "Battery capacity (kWh)",
-          "charging_efficiency": "Charging efficiency (%)"
+          "efficiency": "Charging efficiency (%)",
+          "plug_entity": "Car plugged-in sensor"
         }
+      },
+      "summary": {
+        "title": "Summary",
+        "description": "{prices}\n\n{tariff}\n\n{cars}\n\nSave to apply."
       }
     },
     "error": {
       "cannot_connect": "Unable to connect to EcoVolter.",
       "invalid_auth": "Authentication failed. Check the API secret.",
       "unknown": "Unexpected error while communicating with EcoVolter.",
-      "invalid_vt_windows": "Use the format 8:00-9:00, 16:00-17:00"
+      "invalid_price_sensor": "The sensor has no prices in a supported format.",
+      "invalid_cez": "No ČEZ schedule (datum + casy) found. Choose the raw data sensor.",
+      "invalid_hdo": "The sensor is neither binary nor has start/end windows.",
+      "invalid_vt_windows": "Use the format 8:00-9:00, 16:00-17:00",
+      "invalid_car_name": "Choose another name (each car needs a unique name).",
+      "battery_required": "Enter the battery capacity for the battery sensor."
     },
     "abort": {
       "already_configured": "This EcoVolter is already configured."
@@ -161,6 +239,12 @@
           "tomorrow": "Tomorrow",
           "day_after": "Day after tomorrow"
         }
+      },
+      "car": {
+        "name": "Car",
+        "state": {
+          "other": "Other car"
+        }
       }
     },
     "time": {
@@ -177,59 +261,138 @@
   "options": {
     "step": {
       "init": {
-        "title": "Options",
-        "description": "Refresh interval and electricity price type.",
-        "data": {
-          "scan_interval": "Refresh interval (s)",
-          "price_type": "Price type"
+        "title": "EcoVolter settings",
+        "description": "What do you want to change?",
+        "menu_options": {
+          "tariff_type": "Prices and tariff",
+          "tariff_source": "Low and high tariff (VT/NT)",
+          "cars": "Cars",
+          "interval": "Refresh interval"
         }
       },
-      "price_type": {
-        "title": "Electricity price",
-        "description": "How should the charging scheduler calculate the price?",
+      "interval": {
+        "title": "Refresh interval",
+        "description": "How often to read the charger. 2 s recommended.",
         "data": {
-          "price_type": "Price type"
+          "scan_interval": "Refresh interval (s)"
         }
       },
-      "prices": {
-        "title": "Prices",
-        "description": "**Sensor:** choose the price sensor (empty = auto-detect a final-price sensor or Czech Energy Spot Prices). Distribution is only added to Czech Energy Spot Prices – leave 0 for a final-price sensor.\n\n**Fixed two-rate tariff:** energy and distribution price per kWh in VT and NT incl. VAT. For a single rate enter the same prices for VT and NT.",
+      "tariff_type": {
+        "title": "Which tariff do you have?",
+        "description": "The scheduler uses it to find the cheapest time.",
+        "menu_options": {
+          "spot": "Spot – price changes every hour / 15 min",
+          "fixed2": "Fixed two-rate (VT / NT)",
+          "fixed1": "Fixed single rate"
+        }
+      },
+      "spot": {
+        "title": "Spot price",
+        "description": "Do you have a sensor with the **final price** – incl. distribution and VAT?",
+        "menu_options": {
+          "spot_final_yes": "Yes – I have the final price",
+          "spot_final_no": "No – only the spot price"
+        }
+      },
+      "spot_final_yes": {
+        "title": "Final price sensor",
+        "description": "Choose the sensor whose price already includes distribution and VAT. If it also states the tariff (VT/NT), the next step is skipped.",
         "data": {
-          "price_entity": "Price sensor",
+          "price_entity": "Final price sensor"
+        }
+      },
+      "spot_final_no": {
+        "title": "Spot price and fees",
+        "description": "Enter all prices **excl. VAT**. Final price = (spot + markup + distribution) × VAT – shown in the summary.",
+        "data": {
+          "price_entity": "Spot price sensor (e.g. Czech Energy Spot Prices)",
+          "markup": "Supplier markup (CZK/kWh excl. VAT)",
+          "distribution_vt": "Distribution VT (CZK/kWh excl. VAT)",
+          "distribution_nt": "Distribution NT (CZK/kWh excl. VAT)",
+          "vat": "VAT (%)"
+        }
+      },
+      "fixed2": {
+        "title": "Fixed two-rate tariff",
+        "description": "Prices per kWh **excl. VAT**; final prices are shown in the summary.",
+        "data": {
           "energy_vt": "Energy VT (CZK/kWh)",
           "energy_nt": "Energy NT (CZK/kWh)",
           "distribution_vt": "Distribution VT (CZK/kWh)",
-          "distribution_nt": "Distribution NT (CZK/kWh)"
+          "distribution_nt": "Distribution NT (CZK/kWh)",
+          "vat": "VAT (%)"
         }
       },
-      "tariff": {
-        "title": "Low and high tariff (HDO)",
-        "description": "HDO sensor: for ČEZ choose the \"Raw data\" sensor (7-day NT schedule). A sensor with a start/end window list or a \"low tariff active\" binary sensor (on = NT, current state only) also works. VT windows: manual fallback, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Used for the fixed tariff, Low tariff only mode and sensors without tariff info.",
+      "fixed1": {
+        "title": "Fixed single rate",
+        "description": "Prices per kWh **excl. VAT**; the final price is shown in the summary.",
+        "data": {
+          "energy": "Energy (CZK/kWh)",
+          "distribution": "Distribution (CZK/kWh)",
+          "vat": "VAT (%)"
+        }
+      },
+      "tariff_source": {
+        "title": "Where do low and high tariff come from?",
+        "description": "NT/VT times are needed for prices and the Low tariff only mode.",
+        "menu_options": {
+          "tariff_cez": "ČEZ Distribuce (7-day HDO schedule)",
+          "tariff_sensor": "Other HDO sensor",
+          "tariff_manual": "Enter times manually"
+        }
+      },
+      "tariff_cez": {
+        "title": "ČEZ Distribuce",
+        "description": "Choose the **raw data** sensor of the ČEZ HDO integration (e.g. `sensor.cez_hdo_raw_data_…`). The NT schedule is read 7 days ahead.",
+        "data": {
+          "hdo_entity": "ČEZ HDO raw data sensor"
+        }
+      },
+      "tariff_sensor": {
+        "title": "HDO sensor",
+        "description": "A \"low tariff active\" binary sensor (on = NT) or a sensor with a start/end window list. A binary sensor only knows the current state – add VT times for planning ahead.",
         "data": {
           "hdo_entity": "HDO sensor",
-          "vt_windows": "High tariff (VT) windows"
+          "vt_windows": "VT times (optional, e.g. 8:00-9:00, 16:00-17:00)"
+        }
+      },
+      "tariff_manual": {
+        "title": "High tariff times",
+        "description": "When the **high tariff (VT)** applies, comma separated. All other time is NT.",
+        "data": {
+          "vt_windows": "VT times, e.g. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00"
+        }
+      },
+      "cars": {
+        "title": "Cars",
+        "description": "How many cars do you charge with this charger? Cars enable % targets and detecting which car is plugged in.",
+        "data": {
+          "count": "Number of cars"
         }
       },
       "car": {
-        "title": "Car (optional)",
-        "description": "For charging to a target %: the car's battery level sensor, battery capacity and charging efficiency (losses, typically 85–92 %).",
+        "title": "Car {number} of {count}",
+        "description": "The **battery sensor** (from the car's integration) enables % targets. The **plug sensor** (e.g. \"charging cable connected\" or \"charging\") tells which car is plugged in. Both optional.",
         "data": {
-          "soc_entity": "Car battery level (%)",
+          "name": "Name",
+          "soc_entity": "Battery level sensor (%)",
           "battery_kwh": "Battery capacity (kWh)",
-          "charging_efficiency": "Charging efficiency (%)"
+          "efficiency": "Charging efficiency (%)",
+          "plug_entity": "Car plugged-in sensor"
         }
+      },
+      "summary": {
+        "title": "Summary",
+        "description": "{prices}\n\n{tariff}\n\n{cars}\n\nSave to apply."
       }
     },
     "error": {
-      "invalid_vt_windows": "Use the format 8:00-9:00, 16:00-17:00"
-    }
-  },
-  "selector": {
-    "price_type": {
-      "options": {
-        "sensor": "Spot / price sensor",
-        "fixed": "Fixed two-rate tariff (VT / NT)"
-      }
+      "invalid_price_sensor": "The sensor has no prices in a supported format.",
+      "invalid_cez": "No ČEZ schedule (datum + casy) found. Choose the raw data sensor.",
+      "invalid_hdo": "The sensor is neither binary nor has start/end windows.",
+      "invalid_vt_windows": "Use the format 8:00-9:00, 16:00-17:00",
+      "invalid_car_name": "Choose another name (each car needs a unique name).",
+      "battery_required": "Enter the battery capacity for the battery sensor."
     }
   }
 }

@@ -9,47 +9,125 @@
           "secret": "API tajný klíč"
         }
       },
-      "price_type": {
-        "title": "Cena elektřiny",
-        "description": "Jak se má počítat cena pro plánovač nabíjení?",
-        "data": {
-          "price_type": "Typ ceny"
+      "tariff_type": {
+        "title": "Jaký máte tarif?",
+        "description": "Podle tarifu se plánovač rozhoduje, kdy je elektřina nejlevnější.",
+        "menu_options": {
+          "spot": "Spot – cena se mění každou hodinu / 15 min",
+          "fixed2": "Pevný dvoutarif (VT / NT)",
+          "fixed1": "Pevný jednotarif"
         }
       },
-      "prices": {
-        "title": "Ceny",
-        "description": "**Senzor:** vyberte senzor ceny (prázdné = automaticky najít senzor s výslednou cenou nebo Czech Energy Spot Prices). Distribuce se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0.\n\n**Pevný dvoutarif:** cena silové elektřiny a distribuce za kWh ve VT a NT vč. DPH. Pro jednotarif zadejte stejné ceny do VT i NT.",
+      "spot": {
+        "title": "Spotová cena",
+        "description": "Máte v Home Assistantu senzor s **výslednou cenou** – včetně distribuce a DPH?",
+        "menu_options": {
+          "spot_final_yes": "Ano – mám výslednou cenu",
+          "spot_final_no": "Ne – mám jen spotovou cenu"
+        }
+      },
+      "spot_final_yes": {
+        "title": "Senzor s výslednou cenou",
+        "description": "Vyberte senzor, jehož cena už obsahuje distribuci i DPH. Pokud senzor u cen uvádí i tarif (VT/NT), další krok se přeskočí.",
         "data": {
-          "price_entity": "Cenový senzor",
+          "price_entity": "Senzor výsledné ceny"
+        }
+      },
+      "spot_final_no": {
+        "title": "Spotová cena a poplatky",
+        "description": "Všechny ceny zadávejte **bez DPH**. Výsledná cena = (spot + přirážka + distribuce) × DPH – uvidíte ji v souhrnu.",
+        "data": {
+          "price_entity": "Senzor spotové ceny (např. Czech Energy Spot Prices)",
+          "markup": "Přirážka obchodníka (Kč/kWh bez DPH)",
+          "distribution_vt": "Distribuce VT (Kč/kWh bez DPH)",
+          "distribution_nt": "Distribuce NT (Kč/kWh bez DPH)",
+          "vat": "DPH (%)"
+        }
+      },
+      "fixed2": {
+        "title": "Pevný dvoutarif",
+        "description": "Ceny za kWh **bez DPH**, výsledné ceny uvidíte v souhrnu.",
+        "data": {
           "energy_vt": "Silová elektřina VT (Kč/kWh)",
           "energy_nt": "Silová elektřina NT (Kč/kWh)",
           "distribution_vt": "Distribuce VT (Kč/kWh)",
-          "distribution_nt": "Distribuce NT (Kč/kWh)"
+          "distribution_nt": "Distribuce NT (Kč/kWh)",
+          "vat": "DPH (%)"
         }
       },
-      "tariff": {
-        "title": "Nízký a vysoký tarif (HDO)",
-        "description": "HDO senzor: pro ČEZ vyberte senzor „Surová data“ (rozvrh NT na 7 dní). Podporován je i senzor se seznamem oken start/end nebo binární senzor „Nízký tarif aktivní“ (zapnuto = NT, zná jen aktuální stav). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+      "fixed1": {
+        "title": "Pevný jednotarif",
+        "description": "Ceny za kWh **bez DPH**, výslednou cenu uvidíte v souhrnu.",
+        "data": {
+          "energy": "Silová elektřina (Kč/kWh)",
+          "distribution": "Distribuce (Kč/kWh)",
+          "vat": "DPH (%)"
+        }
+      },
+      "tariff_source": {
+        "title": "Odkud brát nízký a vysoký tarif?",
+        "description": "Časy NT/VT potřebuje plánovač pro výpočet ceny a režim Jen NT.",
+        "menu_options": {
+          "tariff_cez": "ČEZ Distribuce (rozvrh HDO na 7 dní)",
+          "tariff_sensor": "Jiný HDO senzor",
+          "tariff_manual": "Zadám časy ručně"
+        }
+      },
+      "tariff_cez": {
+        "title": "ČEZ Distribuce",
+        "description": "Vyberte senzor **„Surová data“** z integrace ČEZ HDO (např. `sensor.cez_hdo_raw_data_…`). Rozvrh NT se načte na 7 dní dopředu.",
+        "data": {
+          "hdo_entity": "Senzor ČEZ HDO – Surová data"
+        }
+      },
+      "tariff_sensor": {
+        "title": "HDO senzor",
+        "description": "Binární senzor „Nízký tarif aktivní“ (zapnuto = NT) nebo senzor se seznamem oken start/end. Binární senzor zná jen aktuální stav – pro plánování dopředu doplňte časy VT.",
         "data": {
           "hdo_entity": "HDO senzor",
-          "vt_windows": "Časy vysokého tarifu (VT)"
+          "vt_windows": "Časy VT (nepovinné, např. 8:00-9:00, 16:00-17:00)"
+        }
+      },
+      "tariff_manual": {
+        "title": "Časy vysokého tarifu",
+        "description": "Kdy platí **vysoký tarif (VT)**, oddělené čárkou. Ostatní čas je NT.",
+        "data": {
+          "vt_windows": "Časy VT, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00"
+        }
+      },
+      "cars": {
+        "title": "Auta",
+        "description": "Kolik aut nabíjíte touto nabíječkou? Auta umožní nabíjení do zadaných % a automatické rozpoznání připojeného auta.",
+        "data": {
+          "count": "Počet aut"
         }
       },
       "car": {
-        "title": "Auto (nepovinné)",
-        "description": "Pro nabíjení do zadaných %: senzor stavu baterie auta, kapacita baterie a účinnost nabíjení (ztráty, obvykle 85–92 %).",
+        "title": "Auto {number} z {count}",
+        "description": "**Senzor baterie** (z integrace auta) umožní cíl v %. **Senzor připojení** (např. „kabel připojen“ nebo „nabíjí se“) umožní poznat, které auto je připojené. Obojí je nepovinné.",
         "data": {
-          "soc_entity": "Stav baterie auta (%)",
+          "name": "Název",
+          "soc_entity": "Senzor baterie (%)",
           "battery_kwh": "Kapacita baterie (kWh)",
-          "charging_efficiency": "Účinnost nabíjení (%)"
+          "efficiency": "Účinnost nabíjení (%)",
+          "plug_entity": "Senzor připojení auta"
         }
+      },
+      "summary": {
+        "title": "Souhrn",
+        "description": "{prices}\n\n{tariff}\n\n{cars}\n\nUložením se nastavení použije."
       }
     },
     "error": {
       "cannot_connect": "K EcoVolteru se nepodařilo připojit.",
       "invalid_auth": "Ověření selhalo. Zkontrolujte API tajný klíč.",
       "unknown": "Při komunikaci s EcoVolterem nastala neočekávaná chyba.",
-      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00"
+      "invalid_price_sensor": "Senzor nemá ceny v podporovaném formátu.",
+      "invalid_cez": "V senzoru nebyl nalezen rozvrh ČEZ (datum + casy). Vyberte senzor „Surová data“.",
+      "invalid_hdo": "Senzor není binární ani neobsahuje okna start/end.",
+      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00",
+      "invalid_car_name": "Zadejte jiný název (každé auto musí mít jedinečný název).",
+      "battery_required": "Pro senzor baterie zadejte i kapacitu baterie."
     },
     "abort": {
       "already_configured": "Tento EcoVolter je již nakonfigurován."
@@ -161,6 +239,12 @@
           "tomorrow": "Zítra",
           "day_after": "Pozítří"
         }
+      },
+      "car": {
+        "name": "Auto",
+        "state": {
+          "other": "Jiné auto"
+        }
       }
     },
     "time": {
@@ -177,59 +261,138 @@
   "options": {
     "step": {
       "init": {
-        "title": "Možnosti",
-        "description": "Interval obnovy a typ ceny elektřiny.",
-        "data": {
-          "scan_interval": "Interval obnovy (s)",
-          "price_type": "Typ ceny"
+        "title": "Nastavení EcoVolter",
+        "description": "Co chcete upravit?",
+        "menu_options": {
+          "tariff_type": "Ceny a tarif",
+          "tariff_source": "Nízký a vysoký tarif (VT/NT)",
+          "cars": "Auta",
+          "interval": "Interval obnovy"
         }
       },
-      "price_type": {
-        "title": "Cena elektřiny",
-        "description": "Jak se má počítat cena pro plánovač nabíjení?",
+      "interval": {
+        "title": "Interval obnovy",
+        "description": "Jak často číst stav nabíječky. Doporučeno 2 s.",
         "data": {
-          "price_type": "Typ ceny"
+          "scan_interval": "Interval obnovy (s)"
         }
       },
-      "prices": {
-        "title": "Ceny",
-        "description": "**Senzor:** vyberte senzor ceny (prázdné = automaticky najít senzor s výslednou cenou nebo Czech Energy Spot Prices). Distribuce se přičítá jen ke spotové ceně z Czech Energy Spot Prices – u senzoru s výslednou cenou nechte 0.\n\n**Pevný dvoutarif:** cena silové elektřiny a distribuce za kWh ve VT a NT vč. DPH. Pro jednotarif zadejte stejné ceny do VT i NT.",
+      "tariff_type": {
+        "title": "Jaký máte tarif?",
+        "description": "Podle tarifu se plánovač rozhoduje, kdy je elektřina nejlevnější.",
+        "menu_options": {
+          "spot": "Spot – cena se mění každou hodinu / 15 min",
+          "fixed2": "Pevný dvoutarif (VT / NT)",
+          "fixed1": "Pevný jednotarif"
+        }
+      },
+      "spot": {
+        "title": "Spotová cena",
+        "description": "Máte v Home Assistantu senzor s **výslednou cenou** – včetně distribuce a DPH?",
+        "menu_options": {
+          "spot_final_yes": "Ano – mám výslednou cenu",
+          "spot_final_no": "Ne – mám jen spotovou cenu"
+        }
+      },
+      "spot_final_yes": {
+        "title": "Senzor s výslednou cenou",
+        "description": "Vyberte senzor, jehož cena už obsahuje distribuci i DPH. Pokud senzor u cen uvádí i tarif (VT/NT), další krok se přeskočí.",
         "data": {
-          "price_entity": "Cenový senzor",
+          "price_entity": "Senzor výsledné ceny"
+        }
+      },
+      "spot_final_no": {
+        "title": "Spotová cena a poplatky",
+        "description": "Všechny ceny zadávejte **bez DPH**. Výsledná cena = (spot + přirážka + distribuce) × DPH – uvidíte ji v souhrnu.",
+        "data": {
+          "price_entity": "Senzor spotové ceny (např. Czech Energy Spot Prices)",
+          "markup": "Přirážka obchodníka (Kč/kWh bez DPH)",
+          "distribution_vt": "Distribuce VT (Kč/kWh bez DPH)",
+          "distribution_nt": "Distribuce NT (Kč/kWh bez DPH)",
+          "vat": "DPH (%)"
+        }
+      },
+      "fixed2": {
+        "title": "Pevný dvoutarif",
+        "description": "Ceny za kWh **bez DPH**, výsledné ceny uvidíte v souhrnu.",
+        "data": {
           "energy_vt": "Silová elektřina VT (Kč/kWh)",
           "energy_nt": "Silová elektřina NT (Kč/kWh)",
           "distribution_vt": "Distribuce VT (Kč/kWh)",
-          "distribution_nt": "Distribuce NT (Kč/kWh)"
+          "distribution_nt": "Distribuce NT (Kč/kWh)",
+          "vat": "DPH (%)"
         }
       },
-      "tariff": {
-        "title": "Nízký a vysoký tarif (HDO)",
-        "description": "HDO senzor: pro ČEZ vyberte senzor „Surová data“ (rozvrh NT na 7 dní). Podporován je i senzor se seznamem oken start/end nebo binární senzor „Nízký tarif aktivní“ (zapnuto = NT, zná jen aktuální stav). Časy VT: ruční záloha, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00. Používá se pro pevný dvoutarif, režim Jen NT a senzory bez informace o tarifu.",
+      "fixed1": {
+        "title": "Pevný jednotarif",
+        "description": "Ceny za kWh **bez DPH**, výslednou cenu uvidíte v souhrnu.",
+        "data": {
+          "energy": "Silová elektřina (Kč/kWh)",
+          "distribution": "Distribuce (Kč/kWh)",
+          "vat": "DPH (%)"
+        }
+      },
+      "tariff_source": {
+        "title": "Odkud brát nízký a vysoký tarif?",
+        "description": "Časy NT/VT potřebuje plánovač pro výpočet ceny a režim Jen NT.",
+        "menu_options": {
+          "tariff_cez": "ČEZ Distribuce (rozvrh HDO na 7 dní)",
+          "tariff_sensor": "Jiný HDO senzor",
+          "tariff_manual": "Zadám časy ručně"
+        }
+      },
+      "tariff_cez": {
+        "title": "ČEZ Distribuce",
+        "description": "Vyberte senzor **„Surová data“** z integrace ČEZ HDO (např. `sensor.cez_hdo_raw_data_…`). Rozvrh NT se načte na 7 dní dopředu.",
+        "data": {
+          "hdo_entity": "Senzor ČEZ HDO – Surová data"
+        }
+      },
+      "tariff_sensor": {
+        "title": "HDO senzor",
+        "description": "Binární senzor „Nízký tarif aktivní“ (zapnuto = NT) nebo senzor se seznamem oken start/end. Binární senzor zná jen aktuální stav – pro plánování dopředu doplňte časy VT.",
         "data": {
           "hdo_entity": "HDO senzor",
-          "vt_windows": "Časy vysokého tarifu (VT)"
+          "vt_windows": "Časy VT (nepovinné, např. 8:00-9:00, 16:00-17:00)"
+        }
+      },
+      "tariff_manual": {
+        "title": "Časy vysokého tarifu",
+        "description": "Kdy platí **vysoký tarif (VT)**, oddělené čárkou. Ostatní čas je NT.",
+        "data": {
+          "vt_windows": "Časy VT, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00"
+        }
+      },
+      "cars": {
+        "title": "Auta",
+        "description": "Kolik aut nabíjíte touto nabíječkou? Auta umožní nabíjení do zadaných % a automatické rozpoznání připojeného auta.",
+        "data": {
+          "count": "Počet aut"
         }
       },
       "car": {
-        "title": "Auto (nepovinné)",
-        "description": "Pro nabíjení do zadaných %: senzor stavu baterie auta, kapacita baterie a účinnost nabíjení (ztráty, obvykle 85–92 %).",
+        "title": "Auto {number} z {count}",
+        "description": "**Senzor baterie** (z integrace auta) umožní cíl v %. **Senzor připojení** (např. „kabel připojen“ nebo „nabíjí se“) umožní poznat, které auto je připojené. Obojí je nepovinné.",
         "data": {
-          "soc_entity": "Stav baterie auta (%)",
+          "name": "Název",
+          "soc_entity": "Senzor baterie (%)",
           "battery_kwh": "Kapacita baterie (kWh)",
-          "charging_efficiency": "Účinnost nabíjení (%)"
+          "efficiency": "Účinnost nabíjení (%)",
+          "plug_entity": "Senzor připojení auta"
         }
+      },
+      "summary": {
+        "title": "Souhrn",
+        "description": "{prices}\n\n{tariff}\n\n{cars}\n\nUložením se nastavení použije."
       }
     },
     "error": {
-      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00"
-    }
-  },
-  "selector": {
-    "price_type": {
-      "options": {
-        "sensor": "Spot / senzor ceny",
-        "fixed": "Pevný dvoutarif (VT / NT)"
-      }
+      "invalid_price_sensor": "Senzor nemá ceny v podporovaném formátu.",
+      "invalid_cez": "V senzoru nebyl nalezen rozvrh ČEZ (datum + casy). Vyberte senzor „Surová data“.",
+      "invalid_hdo": "Senzor není binární ani neobsahuje okna start/end.",
+      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00",
+      "invalid_car_name": "Zadejte jiný název (každé auto musí mít jedinečný název).",
+      "battery_required": "Pro senzor baterie zadejte i kapacitu baterie."
     }
   }
 }
