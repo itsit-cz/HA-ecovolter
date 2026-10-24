@@ -61,19 +61,104 @@ Chyba autentizace nevyvolává nový DNS překlad.
 
 ## EcoVolter karta
 
-Integrace registruje vlastní kartu **EcoVolter**, kterou lze přidat přes běžný editor dashboardu. V editoru karty lze vybrat konkrétní nabíječku, variantu **Minimalistic**, **Compact** nebo **Detailed**, vlastní název a jazyk **Čeština / English**.
+Integrace registruje vlastní kartu **EcoVolter**, kterou lze přidat přes běžný editor dashboardu. V editoru karty lze vybrat konkrétní nabíječku, variantu **Minimalistic**, **Compact** nebo **Detailed**, vlastní název, jazyk **Čeština / English** a zobrazení sekce **Plánovač**.
 
 Karta zobrazuje výkon, energii relace, počet aktivních fází a nastavený nabíjecí proud. Umožňuje zapnout/vypnout nabíjení, přepnout 1/3 fáze a nastavit proud 6–16 A. Pro ovládání proudu lze v editoru zvolit slider nebo kompaktní ovládání **− / hodnota / +** s možností ručního zadání. Minimalistic varianta zobrazuje základní údaje přímo ve stavovém řádku, Detailed varianta navíc proud L1–L3, napětí L1–L3 a dlouhodobé statistiky.
 
 ## Dashboard příklady
 
-V repozitáři jsou také tři hotové příklady postavené pouze na nativních kartách Home Assistantu:
+V repozitáři jsou také hotové příklady postavené pouze na nativních kartách Home Assistantu:
 
 - `examples/lovelace/compact.yaml` – kompaktní karta pro běžné ovládání
 - `examples/lovelace/detailed.yaml` – detailní karta včetně fází a statistik
 - `examples/lovelace/dual-charger.yaml` – přehled pro dvě nabíječky
+- `examples/lovelace/scheduler.yaml` – ovládání plánovače nabíjení
 
 Konkrétní ID entit závisí na názvu zařízení vytvořeném v Home Assistantu. V ukázkách proto nahraďte vzorová ID vlastními ID entit.
+
+## Plánovač nabíjení
+
+Plánovač sám zapíná a vypíná nabíjení podle ceny elektřiny. Je součástí integrace, takže běží i bez otevřeného dashboardu a přežije restart Home Assistantu. Po instalaci je v režimu **Ručně**, takže nic nepřepíná, dokud ho nezapnete.
+
+### Krok 1: Ceny elektřiny
+
+Nainstalujte přes HACS integraci [Czech Energy Spot Prices](https://github.com/rnovacek/homeassistant_cz_energy_spot_prices), pokud ji ještě nemáte. EcoVolter její senzor najde sám:
+
+1. `sensor.current_buy_electricity_price_15min`, nebo `sensor.current_buy_electricity_price` (cena včetně přirážky dodavatele, pokud ji máte v integraci nastavenou),
+2. jinak `sensor.current_spot_electricity_price_15min`, nebo `sensor.current_spot_electricity_price`.
+
+Jiný senzor (se stejným formátem atributů) lze vybrat v kroku 2.
+
+### Krok 2: Distribuce a vysoký tarif
+
+**Nastavení → Zařízení a služby → EcoVolter → ⚙ Konfigurovat** a vyplňte:
+
+| Pole | Co zadat | Příklad |
+|---|---|---|
+| Senzor spotové ceny | nechte prázdné (automaticky) | |
+| Distribuce VT (Kč/kWh) | cena distribuce ve vysokém tarifu za kWh vč. DPH, podle ceníku distributora | `2,10` |
+| Distribuce NT (Kč/kWh) | totéž pro nízký tarif | `0,25` |
+| Časy vysokého tarifu (VT) | kdy platí VT podle vašeho HDO, oddělené čárkou | `8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00` |
+
+Časy VT najdete u distributora podle kódu HDO (ČEZ, EG.D, PRE). Pokud máte jednotarif, zadejte stejnou distribuci do VT i NT a časy VT nechte prázdné.
+
+Plánovač počítá **cenu = spotová cena + distribuce** (VT nebo NT podle času).
+
+### Krok 3: Zapnutí
+
+V kartě **EcoVolter** je sekce **Plánovač** (u varianty Minimalistic ji zapněte v editoru karty: *Plánovač → Zobrazit*). Zvolte režim:
+
+| Režim | Co dělá | Co nastavit |
+|---|---|---|
+| **Ručně** | plánovač nic nepřepíná | – |
+| **Nejlevnější** | do času *Hotovo do* nabije zadaný počet hodin nebo kWh v nejlevnějších úsecích (i rozptýlených po 15 min) | *Hodiny* / *kWh*, *Hotovo do*, volitelně *Max. cena* (prázdné = bez limitu) |
+| **Pod limit** | nabíjí, kdykoli je cena pod limitem | *Max. cena* |
+| **Jen NT** | nabíjí jen v nízkém tarifu | časy VT v kroku 2 |
+
+Příklad: chci mít ráno nabito 3 hodiny → **Nejlevnější**, *Hodiny* `3`, *Hotovo do* `07:00`. Pod tlačítky se zobrazí plán („Naplánováno 3 h · start 01:15 · odhad 25 Kč“) a časová osa cen, kde jsou vybrané úseky zvýrazněné.
+
+### Jak se chová
+
+- Plán se přepočítává průběžně, také když kolem 13:00 přijdou ceny na zítřek a když se změní cíl nebo termín.
+- Nabitý čas/energie se počítá od posledního termínu *Hotovo do*. Po termínu začíná nový cyklus.
+- Cíl v kWh se přepočítává na čas podle aktuálního výkonu (nebo podle nastaveného proudu a fází), je to odhad.
+- Když nabíjení ručně zapnete/vypnete (vypínač v HA, aplikace EcoVolter), plánovač to respektuje, dokud plán sám nezmění rozhodnutí (např. do začátku dalšího úseku).
+- Pokud do termínu nestačí čas (nebo úseky pod limitem), karta ukáže varování, kolik se stihne.
+
+### Entity plánovače
+
+Všechno lze ovládat i z automatizací a skriptů:
+
+| Entita | Význam |
+|---|---|
+| `select.…_rezim_nabijeni` / *Režim nabíjení* | `manual`, `cheapest`, `price_limit`, `low_tariff` |
+| *Cíl nabíjení* (select) | `hours` nebo `energy` |
+| *Hodin nabíjení*, *Nabít energie*, *Maximální cena* (number) | parametry plánu |
+| *Hotovo do* (time) | termín |
+| *Další plánované nabíjení* (sensor) | čas dalšího startu, v atributech celý plán a odhad ceny |
+| *Plánované nabíjení teď* (binary_sensor) | zapnuto, když plán chce právě nabíjet |
+| *Cena elektřiny vč. distribuce* (sensor) | aktuální cena za kWh |
+
+Přesná ID entit najdete v **Nastavení → Zařízení a služby → EcoVolter → zařízení**. Hotový příklad dashboardu z nativních karet je v `examples/lovelace/scheduler.yaml`.
+
+Příklad automatizace – každý večer v 18:00 naplánovat 3 h do 6:30:
+
+```yaml
+alias: EcoVolter – noční nabíjení
+triggers:
+  - trigger: time
+    at: "18:00:00"
+actions:
+  - action: number.set_value
+    target: { entity_id: number.ecovolter_hodin_nabijeni }
+    data: { value: 3 }
+  - action: time.set_value
+    target: { entity_id: time.ecovolter_hotovo_do }
+    data: { time: "06:30:00" }
+  - action: select.select_option
+    target: { entity_id: select.ecovolter_rezim_nabijeni }
+    data: { option: cheapest }
+```
 
 ## Poznámky
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timedelta
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
@@ -21,6 +21,9 @@ from .const import (
     SETTINGS_VERIFY_AFTER_WRITE_SECONDS,
     STALE_AFTER_SECONDS,
 )
+
+if TYPE_CHECKING:
+    from .scheduler import EcoVolterScheduler
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,6 +58,7 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._last_settings = 0.0
         self._failures = 0
         self._logged_unavailable = False
+        self.scheduler: EcoVolterScheduler | None = None
 
     async def _safe_read(self, name: str, reader) -> dict[str, Any] | None:
         """Read one API section; return None on failure."""
@@ -144,8 +148,16 @@ class EcoVolterCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "diagnostic": self._diagnostic,
         }
 
-    async def async_patch_settings(self, settings: dict[str, Any]) -> None:
+    async def async_patch_settings(
+        self, settings: dict[str, Any], from_scheduler: bool = False
+    ) -> None:
         """Write settings, update HA immediately, verify shortly afterwards."""
+        if (
+            not from_scheduler
+            and self.scheduler is not None
+            and "isChargingEnable" in settings
+        ):
+            self.scheduler.note_manual_change(bool(settings["isChargingEnable"]))
         try:
             await self.api.async_patch_settings(settings)
         except EcoVolterError as err:

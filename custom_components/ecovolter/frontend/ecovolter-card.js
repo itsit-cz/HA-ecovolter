@@ -12,7 +12,7 @@
  * - Optimistic values expire: if the charger does not confirm a change within
  *   a few seconds, the card shows the real state again instead of lying forever.
  */
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 const DOMAIN = "ecovolter";
 const MIN_A = 6;
 const MAX_A = 16;
@@ -39,7 +39,18 @@ const KEY_MAP = {
   "switch:charging_enabled": "charging_enabled",
   "switch:three_phase": "three_phase",
   "number:target_current": "target_current",
+  // scheduler
+  "select:charging_mode": "charging_mode",
+  "select:target_type": "target_type",
+  "number:target_hours": "target_hours",
+  "number:target_energy": "target_energy",
+  "number:max_price": "max_price",
+  "time:ready_by": "ready_by",
+  "sensor:charging_plan": "charging_plan",
+  "sensor:current_total_price": "current_total_price",
+  "binary_sensor:scheduled_now": "scheduled_now",
 };
+const MODES = ["manual", "cheapest", "price_limit", "low_tariff"];
 // unique_id suffixes, used only for the admin websocket fallback
 const UID_KEYS = Object.values(KEY_MAP).sort((a, b) => b.length - a.length);
 
@@ -54,6 +65,14 @@ const T = {
     selectDevice: "Vyberte EcoVolter nabíječku v editoru karty.",
     notFound: "Entity nabíječky nebyly nalezeny.",
     failed: "EcoVolter: příkaz se nezdařil",
+    scheduler: "Plánovač", now: "Teď",
+    modes: { manual: "Ručně", cheapest: "Nejlevnější", price_limit: "Pod limit", low_tariff: "Jen NT" },
+    hours: "Hodiny", kwh: "kWh", readyBy: "Hotovo do", maxPrice: "Max. cena", noLimit: "bez limitu",
+    planned: "Naplánováno", start: "start", estimate: "odhad", left: "zbývá", charged: "nabito",
+    shortfall: "Do termínu lze naplánovat jen", reached: "Cíl splněn", noPrices: "Chybí ceny elektřiny – nastavte senzor v Možnostech integrace",
+    manualInfo: "Nabíjení ovládáte ručně.", lowTariffInfo: "Nabíjí se jen v nízkém tarifu (NT).",
+    limitInfo: "Nabíjí se, kdykoli je cena pod limitem.", chargingNow: "nabíjí se podle plánu", waiting: "čeká na levný úsek",
+    vt: "VT", currency: "Kč",
   },
   en: {
     connected: "Vehicle connected", disconnected: "Vehicle disconnected",
@@ -65,12 +84,26 @@ const T = {
     selectDevice: "Select an EcoVolter charger in the card editor.",
     notFound: "Charger entities were not found.",
     failed: "EcoVolter: command failed",
+    scheduler: "Scheduler", now: "Now",
+    modes: { manual: "Manual", cheapest: "Cheapest", price_limit: "Below limit", low_tariff: "Low tariff" },
+    hours: "Hours", kwh: "kWh", readyBy: "Ready by", maxPrice: "Max price", noLimit: "no limit",
+    planned: "Planned", start: "start", estimate: "est.", left: "left", charged: "charged",
+    shortfall: "Before the deadline only", reached: "Target reached", noPrices: "No electricity prices – set the sensor in the integration options",
+    manualInfo: "Charging is controlled manually.", lowTariffInfo: "Charges only in the low tariff (NT).",
+    limitInfo: "Charges whenever the price is below the limit.", chargingNow: "charging as planned", waiting: "waiting for a cheap slot",
+    vt: "VT", currency: "CZK",
   },
 };
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const clampA = (v) => Math.max(MIN_A, Math.min(MAX_A, Math.round(Number(v))));
+const fmtDur = (min) => {
+  min = Math.max(0, Math.round(Number(min) || 0));
+  const h = Math.floor(min / 60), m = min % 60;
+  return h ? (m ? `${h} h ${m} min` : `${h} h`) : `${m} min`;
+};
+const hhmm = (d) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 const isBad = (s) => !s || s.state === "unknown" || s.state === "unavailable";
 // Current setpoint of a number entity, or null when it is not a usable number.
 const ampOf = (s) => {
@@ -92,6 +125,7 @@ function ecovolterDevices(hass) {
 
 const STYLE = `
 :host{display:block}
+[hidden]{display:none!important}
 ha-card{padding:16px;overflow:hidden;-webkit-tap-highlight-color:transparent}
 :host([variant=minimalistic]) ha-card{padding:12px}
 .head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:14px}
@@ -123,13 +157,42 @@ button:disabled,input:disabled{opacity:.4;cursor:default}
 .amp-value span{font-weight:600;margin-left:3px}
 .section{margin:16px 0 8px;font-weight:600}
 .msg{padding:18px}
+.sched{margin-top:16px;padding-top:14px;border-top:1px solid var(--divider-color)}
+.sched-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+.sched-head b{font-size:15px}.sched-head span{font-size:13px;opacity:.75}
+.modes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.modes button{padding:10px 4px;font-size:13px}
+.params{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
+.params[hidden]{display:none}
+.param{display:grid;gap:4px;min-width:0}.param[hidden]{display:none}
+.param small{margin:0}
+.seg{display:flex;border-radius:8px;overflow:hidden;border:1px solid var(--divider-color)}
+.seg button{flex:1;border-radius:0;padding:0;font-size:11px;height:100%}
+.field{display:flex;align-items:center;height:38px;border:1px solid var(--divider-color);border-radius:8px;background:var(--card-background-color);padding:0 8px;gap:4px}
+.field input[type=time]{font-size:14px;text-align:left}
+.field input::placeholder{font-weight:400;opacity:.6;font-size:12px}
+.param>small,.param>.seg{height:22px;box-sizing:border-box;display:flex;align-items:center}
+.field{overflow:hidden;box-sizing:border-box;width:100%}
+.field input{flex:1;min-width:0;width:100%;border:0;background:transparent;color:var(--primary-text-color);font:inherit;font-weight:600;padding:0;text-align:center}
+.field span{font-size:12px;opacity:.7}
+.sched-status{margin-top:10px;font-size:13px;line-height:1.4}
+.sched-status.warn{color:var(--warning-color,#e69500)}
+.timeline{position:relative;display:flex;align-items:flex-end;gap:1px;height:72px;margin-top:10px;touch-action:pan-y}
+.timeline .bar{flex:1;min-width:1px;border-radius:2px 2px 0 0;background:var(--disabled-text-color,#bbb);opacity:.55;position:relative}
+.timeline .bar.sel{background:var(--primary-color);opacity:1}
+.timeline .bar.vt::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:3px;background:var(--error-color,#db4437);opacity:.6}
+.timeline .bar.past{opacity:.25}
+.tl-axis{display:flex;justify-content:space-between;font-size:11px;opacity:.65;margin-top:7px}
+.tl-info{font-size:12px;opacity:.8;min-height:16px;margin-top:4px;text-align:center}
+.limit-line{position:absolute;left:0;right:0;border-top:1px dashed var(--error-color,#db4437);pointer-events:none}
 @media(max-width:600px){
   ha-card{padding:14px}.title{font-size:19px}
   .grid,.phase-grid,.switches{gap:6px}
   small{font-size:11px}strong{font-size:15px}
   .switches button{padding:12px 6px;font-size:14px}
+  .modes button{font-size:12px;padding:10px 2px}
 }
-@media(max-width:380px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:380px){.grid,.modes{grid-template-columns:repeat(2,minmax(0,1fr))}.params{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 
 class EcoVolterCard extends HTMLElement {
@@ -301,6 +364,7 @@ class EcoVolterCard extends HTMLElement {
         <button id="phase">〰 ${esc(t.phase)}</button>
       </div>
       ${control}
+      ${this._schedulerHtml()}
       ${detail}
     </ha-card>`;
 
@@ -309,7 +373,187 @@ class EcoVolterCard extends HTMLElement {
     this._update();
   }
 
+  _showScheduler() {
+    if (!this._ents?.charging_mode) return false;
+    const opt = this._config.scheduler;
+    return opt === undefined ? this._config.variant !== "minimalistic" : opt !== false;
+  }
+
+  _schedulerHtml() {
+    if (!this._showScheduler()) return "";
+    const t = this._t;
+    const field = (id, unit, step, min, max) =>
+      // type=text + inputmode=decimal: accepts "4,5" on Czech keyboards (type=number drops the comma)
+      `<label class="field"><input id="${id}" type="text" inputmode="decimal" autocomplete="off" data-step="${step}" data-min="${min}" data-max="${max}"><span>${unit}</span></label>`;
+    return `<div class="sched">
+      <div class="sched-head"><b>${esc(t.scheduler)}</b><span id="priceNow"></span></div>
+      <div class="modes">${MODES.map((m) => `<button data-mode="${m}">${esc(t.modes[m])}</button>`).join("")}</div>
+      <div class="params" id="params">
+        <div class="param" id="pTarget"><div class="seg"><button data-tt="hours">${esc(t.hours)}</button><button data-tt="energy">${esc(t.kwh)}</button></div>
+          <span id="tgtHoursWrap">${field("tgtHours", "h", "0.25", 0, 24)}</span>
+          <span id="tgtEnergyWrap">${field("tgtEnergy", "kWh", "1", 0, 150)}</span></div>
+        <div class="param" id="pReady"><small>${esc(t.readyBy)}</small><label class="field"><input id="readyBy" type="time" step="900"></label></div>
+        <div class="param" id="pMax"><small>${esc(t.maxPrice)}</small>${field("maxPrice", t.currency + "/kWh", "0.1", 0, 30).replace("<input ", `<input placeholder="${esc(t.noLimit)}" `)}</div>
+      </div>
+      <div class="sched-status" id="schedStatus"></div>
+      <div class="timeline" id="timeline"></div>
+      <div class="tl-axis" id="tlAxis"></div>
+      <div class="tl-info" id="tlInfo"></div>
+    </div>`;
+  }
+
+  _bindScheduler() {
+    const root = this.shadowRoot;
+    if (!root.getElementById("timeline")) return;
+    root.querySelectorAll("[data-mode]").forEach((b) =>
+      b.addEventListener("click", () => this._setSelect("charging_mode", b.dataset.mode)));
+    root.querySelectorAll("[data-tt]").forEach((b) =>
+      b.addEventListener("click", () => this._setSelect("target_type", b.dataset.tt)));
+    const bindNum = (id, key) => {
+      const el = root.getElementById(id);
+      el.addEventListener("focus", () => { this._editingField = id; });
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); el.blur(); } });
+      el.addEventListener("blur", () => { this._editingField = null; this._setNumber(key, el.value); });
+    };
+    bindNum("tgtHours", "target_hours");
+    bindNum("tgtEnergy", "target_energy");
+    bindNum("maxPrice", "max_price");
+    const ready = root.getElementById("readyBy");
+    ready.addEventListener("focus", () => { this._editingField = "readyBy"; });
+    ready.addEventListener("change", () => this._setTime(ready.value));
+    ready.addEventListener("blur", () => { this._editingField = null; this._update(); });
+    const tl = root.getElementById("timeline");
+    const info = (e) => {
+      const bar = e.target.closest?.(".bar");
+      if (bar) root.getElementById("tlInfo").textContent = bar.dataset.info;
+    };
+    tl.addEventListener("pointermove", info);
+    tl.addEventListener("pointerdown", info);
+  }
+
+  _updateScheduler() {
+    const root = this.shadowRoot;
+    if (!root.getElementById("timeline")) return;
+    const t = this._t;
+    const set = (el, txt) => { if (el && el.textContent !== txt) el.textContent = txt; };
+    const modeS = this._s("charging_mode");
+    const mode = this._effective("charging_mode", modeS?.state);
+    root.querySelectorAll("[data-mode]").forEach((b) => {
+      b.classList.toggle("on", b.dataset.mode === mode);
+      b.classList.toggle("pending", !!this._pending.charging_mode && b.dataset.mode === mode);
+    });
+    const tt = this._effective("target_type", this._s("target_type")?.state) || "hours";
+    root.querySelectorAll("[data-tt]").forEach((b) => b.classList.toggle("on", b.dataset.tt === tt));
+
+    root.getElementById("params").hidden = !(mode === "cheapest" || mode === "price_limit");
+    root.getElementById("pTarget").hidden = mode !== "cheapest";
+    root.getElementById("pReady").hidden = mode !== "cheapest";
+    root.getElementById("tgtHoursWrap").hidden = tt !== "hours";
+    root.getElementById("tgtEnergyWrap").hidden = tt !== "energy";
+
+    const syncNum = (id, key) => {
+      const el = root.getElementById(id), s = this._s(key);
+      if (this._editingField === id || isBad(s)) return;
+      const num = Number(this._effective(key, Number(s.state)));
+      const v = key === "max_price" && num === 0 ? "" : String(num).replace(".", this._config.language === "en" ? "." : ",");
+      if (el.value !== v) el.value = v;
+    };
+    syncNum("tgtHours", "target_hours");
+    syncNum("tgtEnergy", "target_energy");
+    syncNum("maxPrice", "max_price");
+    const ready = root.getElementById("readyBy"), rs = this._s("ready_by");
+    if (this._editingField !== "readyBy" && !isBad(rs)) {
+      const v = String(this._effective("ready_by", rs.state.slice(0, 5)));
+      if (ready.value !== v) ready.value = v;
+    }
+
+    const priceS = this._s("current_total_price");
+    set(root.getElementById("priceNow"), isBad(priceS) ? "" :
+      `${t.now} ${Number(priceS.state).toFixed(2)} ${t.currency}/kWh`);
+
+    const plan = this._s("charging_plan")?.attributes || {};
+    const slots = Array.isArray(plan.slots) ? plan.slots : [];
+    const status = root.getElementById("schedStatus");
+    let txt = "", warn = false;
+    if (mode === "manual") txt = t.manualInfo;
+    else if (mode === "low_tariff") txt = t.lowTariffInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
+    else if (!slots.length) { txt = t.noPrices; warn = true; }
+    else if (mode === "price_limit") txt = t.limitInfo + (this._s("scheduled_now")?.state === "on" ? ` · ${t.chargingNow}` : "");
+    else if (plan.reason === "target_reached") txt = `✅ ${t.reached} · ${t.charged} ${fmtDur(plan.delivered_minutes)}` + (plan.delivered_kwh ? ` / ${plan.delivered_kwh} kWh` : "");
+    else {
+      const startS = this._s("charging_plan");
+      const start = !isBad(startS) ? new Date(startS.state) : null;
+      const deadline = plan.deadline ? hhmm(new Date(plan.deadline)) : "";
+      if (!plan.complete) { warn = true; txt = `⚠ ${t.shortfall} ${fmtDur(plan.planned_minutes)} / ${fmtDur(plan.needed_minutes)} (${t.readyBy.toLowerCase()} ${deadline})`; }
+      else txt = `${t.planned} ${fmtDur(plan.planned_minutes)}`;
+      if (this._s("scheduled_now")?.state === "on") txt += ` · ${t.chargingNow}`;
+      else if (start) txt += ` · ${t.start} ${hhmm(start)}`;
+      if (plan.estimated_cost) txt += ` · ${t.estimate} ${Math.round(plan.estimated_cost)} ${t.currency}`;
+      if (plan.delivered_minutes) txt += ` · ${t.charged} ${fmtDur(plan.delivered_minutes)}`;
+    }
+    set(status, txt);
+    status.classList.toggle("warn", warn);
+
+    // Rebuild the bars only when the plan actually changes (minutes matter for "past").
+    const sig = JSON.stringify([slots, mode, plan.max_price, Math.floor(Date.now() / 60000)]);
+    if (sig === this._tlSig) return;
+    this._tlSig = sig;
+    const tl = root.getElementById("timeline"), axis = root.getElementById("tlAxis");
+    const showTl = mode !== "manual" && slots.length > 0;
+    tl.hidden = axis.hidden = root.getElementById("tlInfo").hidden = !showTl;
+    if (!showTl) return;
+    const now = Date.now();
+    const deadlineMs = plan.deadline ? Date.parse(plan.deadline) : Infinity;
+    const shown = slots.filter(([st], i) => {
+      const end = i + 1 < slots.length ? Date.parse(slots[i + 1][0]) : Date.parse(st) + 3600e3;
+      return end > now && (mode !== "cheapest" || Date.parse(st) < Math.max(deadlineMs, now + 12 * 3600e3));
+    });
+    const prices = shown.map((x) => x[1]);
+    const max = Math.max(...prices, plan.max_price || 0, 0.01);
+    const min = Math.min(0, ...prices);
+    const h = (p) => Math.max(3, ((p - min) / (max - min)) * 100);
+    tl.innerHTML = shown.map(([st, price, sel, vt]) => {
+      const d = new Date(st);
+      const selOn = sel && mode === "cheapest";
+      const info = `${hhmm(d)} · ${Number(price).toFixed(2)} ${t.currency}/kWh${vt ? " · " + t.vt : ""}`;
+      return `<div class="bar${selOn ? " sel" : ""}${vt ? " vt" : ""}" style="height:${h(price)}%" data-info="${esc(info)}"></div>`;
+    }).join("") + (mode === "price_limit" && plan.max_price ? `<div class="limit-line" style="bottom:${h(plan.max_price)}%"></div>` : "");
+    const first = shown[0] ? new Date(shown[0][0]) : null, last = shown.at(-1) ? new Date(shown.at(-1)[0]) : null;
+    const mid = shown[Math.floor(shown.length / 2)] ? new Date(shown[Math.floor(shown.length / 2)][0]) : null;
+    axis.innerHTML = [first, mid, last].map((d) => `<span>${d ? hhmm(d) : ""}</span>`).join("");
+  }
+
+  _setSelect(key, option) {
+    const s = this._s(key);
+    if (!s || this._effective(key, s.state) === option) return;
+    this._setPending(key, option);
+    this._update();
+    this._call("select", "select_option", { entity_id: s.entity_id, option }, key);
+  }
+
+  _setNumber(key, raw) {
+    const s = this._s(key);
+    if (key === "max_price" && String(raw).trim() === "") raw = "0"; // empty = no limit
+    const n = Number(String(raw).replace(",", "."));
+    if (!s || raw === "" || !Number.isFinite(n)) { this._update(); return; }
+    const min = Number(s.attributes.min ?? 0), max = Number(s.attributes.max ?? 1e9);
+    const v = Math.max(min, Math.min(max, n));
+    if (v === Number(s.state)) { this._update(); return; }
+    this._setPending(key, v);
+    this._update();
+    this._call("number", "set_value", { entity_id: s.entity_id, value: v }, key);
+  }
+
+  _setTime(value) {
+    const s = this._s("ready_by");
+    if (!s || !/^\d{2}:\d{2}/.test(value || "")) return;
+    const hm = value.slice(0, 5);
+    this._setPending("ready_by", hm);
+    this._call("time", "set_value", { entity_id: s.entity_id, time: hm + ":00" }, "ready_by");
+  }
+
   _bind() {
+    this._bindScheduler();
     const $ = (id) => this.shadowRoot.getElementById(id);
     $("charge").addEventListener("click", () => this._toggle("charging_enabled"));
     $("phase").addEventListener("click", () => this._toggle("three_phase"));
@@ -404,6 +648,7 @@ class EcoVolterCard extends HTMLElement {
       root.getElementById("plus").disabled = disabled;
       if (!this._editing && amp != null && input.value !== String(amp)) input.value = String(amp);
     }
+    this._updateScheduler();
   }
 
   /* ---------- actions ---------- */
@@ -515,6 +760,11 @@ class EcoVolterCardEditor extends HTMLElement {
         ${opt("slider", "Slider", c.current_control !== "buttons")}
         ${opt("buttons", "− / hodnota / +", c.current_control === "buttons")}
       </select></label>
+      <label class="field"><span class="label">Plánovač / Scheduler</span><select id="s">
+        ${opt("auto", "Automaticky / Auto", c.scheduler === undefined)}
+        ${opt("show", "Zobrazit / Show", c.scheduler === true)}
+        ${opt("hide", "Skrýt / Hide", c.scheduler === false)}
+      </select></label>
       <label class="field"><span class="label">Jazyk / Language</span><select id="l">
         ${opt("cs", "Čeština", c.language !== "en")}
         ${opt("en", "English", c.language === "en")}
@@ -526,6 +776,13 @@ class EcoVolterCardEditor extends HTMLElement {
     $("v").addEventListener("change", (e) => this._fire("variant", e.target.value));
     $("c").addEventListener("change", (e) => this._fire("current_control", e.target.value));
     $("l").addEventListener("change", (e) => this._fire("language", e.target.value));
+    $("s").addEventListener("change", (e) => {
+      const v = e.target.value;
+      const next = { ...this._config };
+      if (v === "auto") delete next.scheduler; else next.scheduler = v === "show";
+      this._config = next;
+      this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: next }, bubbles: true, composed: true }));
+    });
     $("n").addEventListener("change", (e) => this._fire("name", e.target.value));
   }
 }

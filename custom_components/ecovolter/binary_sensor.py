@@ -46,8 +46,13 @@ async def async_setup_entry(
 ) -> None:
     coordinator = entry.runtime_data
     async_add_entities(
-        EcoVolterBinarySensor(coordinator, entry.entry_id, entry.title, description)
-        for description in BINARY_SENSORS
+        [
+            *(
+                EcoVolterBinarySensor(coordinator, entry.entry_id, entry.title, description)
+                for description in BINARY_SENSORS
+            ),
+            EcoVolterScheduledNow(coordinator, entry.entry_id, entry.title),
+        ]
     )
 
 
@@ -64,3 +69,26 @@ class EcoVolterBinarySensor(EcoVolterEntity, BinarySensorEntity):
         return self.entity_description.value_fn(
             self.coordinator.data.get("status", {})
         )
+
+
+class EcoVolterScheduledNow(EcoVolterEntity, BinarySensorEntity):
+    """On when the scheduler wants the car to charge right now."""
+
+    _attr_translation_key = "scheduled_now"
+    _attr_icon = "mdi:calendar-check"
+
+    def __init__(self, coordinator, entry_id, device_name):
+        super().__init__(coordinator, entry_id, device_name)
+        self._attr_unique_id = f"{entry_id}_scheduled_now"
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def is_on(self):
+        return self.coordinator.scheduler.charge_now
+
+    @property
+    def extra_state_attributes(self):
+        return {"reason": self.coordinator.scheduler.reason}

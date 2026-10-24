@@ -56,6 +56,12 @@
       },
       "active_phases": {
         "name": "Aktivní fáze"
+      },
+      "charging_plan": {
+        "name": "Další plánované nabíjení"
+      },
+      "current_total_price": {
+        "name": "Cena elektřiny vč. distribuce"
       }
     },
     "binary_sensor": {
@@ -64,6 +70,9 @@
       },
       "charging": {
         "name": "Nabíjení"
+      },
+      "scheduled_now": {
+        "name": "Plánované nabíjení teď"
       }
     },
     "switch": {
@@ -77,6 +86,38 @@
     "number": {
       "target_current": {
         "name": "Nabíjecí proud"
+      },
+      "target_hours": {
+        "name": "Hodin nabíjení"
+      },
+      "target_energy": {
+        "name": "Nabít energie"
+      },
+      "max_price": {
+        "name": "Maximální cena"
+      }
+    },
+    "select": {
+      "charging_mode": {
+        "name": "Režim nabíjení",
+        "state": {
+          "manual": "Ručně",
+          "cheapest": "Nejlevnější hodiny",
+          "price_limit": "Pod cenový limit",
+          "low_tariff": "Jen nízký tarif"
+        }
+      },
+      "target_type": {
+        "name": "Cíl nabíjení",
+        "state": {
+          "hours": "Hodiny",
+          "energy": "Energie (kWh)"
+        }
+      }
+    },
+    "time": {
+      "ready_by": {
+        "name": "Hotovo do"
       }
     }
   },
@@ -84,11 +125,18 @@
     "step": {
       "init": {
         "title": "Možnosti",
-        "description": "Interval obnovy živého stavu (sekundy). Doporučeno 2 s; 1 s může některé nabíječky přetěžovat.",
+        "description": "Interval obnovy a ceny pro plánovač nabíjení. Cenový senzor: nechte prázdné pro automatické nalezení senzoru Czech Energy Spot Prices. Distribuce: cena distribuce za kWh ve vysokém (VT) a nízkém (NT) tarifu vč. DPH. Časy VT: kdy platí vysoký tarif podle HDO, např. 8:00-9:00, 12:00-13:00, 16:00-17:00, 19:00-20:00.",
         "data": {
-          "scan_interval": "Interval obnovy (s)"
+          "scan_interval": "Interval obnovy (s)",
+          "price_entity": "Senzor spotové ceny",
+          "distribution_vt": "Distribuce VT (Kč/kWh)",
+          "distribution_nt": "Distribuce NT (Kč/kWh)",
+          "vt_windows": "Časy vysokého tarifu (VT)"
         }
       }
+    },
+    "error": {
+      "invalid_vt_windows": "Použijte formát 8:00-9:00, 16:00-17:00"
     }
   }
 }

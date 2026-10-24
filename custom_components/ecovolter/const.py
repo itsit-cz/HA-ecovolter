@@ -1,10 +1,14 @@
 """Constants for EcoVolter."""
 
 DOMAIN = "ecovolter"
-PLATFORMS = ["sensor", "binary_sensor", "switch", "number"]
+PLATFORMS = ["sensor", "binary_sensor", "switch", "number", "select", "time"]
 
 CONF_SECRET = "secret"
 CONF_SCAN_INTERVAL = "scan_interval"
+CONF_PRICE_ENTITY = "price_entity"
+CONF_DISTRIBUTION_VT = "distribution_vt"
+CONF_DISTRIBUTION_NT = "distribution_nt"
+CONF_VT_WINDOWS = "vt_windows"
 
 DEFAULT_PORT = 80
 # Live status refresh in seconds. 1 s overloads some charger firmware, which

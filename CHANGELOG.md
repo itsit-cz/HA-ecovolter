@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.4.0 — 2026-10-24
+
+Charging scheduler.
+
+- New modes: Manual, Cheapest hours, Below price limit, Low tariff (NT) only.
+- Cheapest hours: set hours or kWh and a "ready by" time; the cheapest (possibly scattered) price slots before the deadline are selected and charging is switched on/off automatically. Re-plans when tomorrow's prices arrive.
+- Price = spot price (Czech Energy Spot Prices, hourly or 15-min) + distribution VT/NT; VT windows and distribution prices are set in the integration options.
+- Optional max price also limits the Cheapest hours plan.
+- Manual changes (HA switch, EcoVolter app) are respected until the plan changes its decision.
+- Charged time/energy is tracked per cycle; settings and progress survive restarts.
+- New entities: charging mode, charging target, hours, energy, max price, ready by, next planned charging (with full plan), electricity price incl. distribution, scheduled charging now.
+- Card: scheduler section with mode buttons, target/deadline/limit fields, price timeline with planned slots and cost estimate. Decimal comma accepted.
+
 ## v0.3.0 — 2026-10-24
 
 Stability and mobile fixes.
