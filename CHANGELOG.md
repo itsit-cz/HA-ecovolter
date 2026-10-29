@@ -1,5 +1,9 @@
 # Changelog
 
+## v1.0.1 — 2026-10-29
+
+- Fixed: the card sometimes showed "Configuration error – Custom element doesn't exist: ecovolter-card" (mostly on phones) and needed several reloads. The Home Assistant frontend replaces the custom element registry while it starts; when the card script loaded first, its registration was lost. The card now registers again whenever the registry changes, and HA replaces the error cards by itself.
+
 ## v1.0.0 — 2026-10-24
 
 First public release for testing. Summary of the 0.3 and 0.4 development versions:
