@@ -12,7 +12,7 @@
  * - Optimistic values expire: if the charger does not confirm a change within
  *   a few seconds, the card shows the real state again instead of lying forever.
  */
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const DOMAIN = "ecovolter";
 const MIN_A = 6;
 const MAX_A = 16;
@@ -906,8 +906,45 @@ class EcoVolterCardEditor extends HTMLElement {
   }
 }
 
-if (!customElements.get("ecovolter-card")) customElements.define("ecovolter-card", EcoVolterCard);
-if (!customElements.get("ecovolter-card-editor")) customElements.define("ecovolter-card-editor", EcoVolterCardEditor);
+// Registration that survives Home Assistant swapping the element registry.
+//
+// The HA frontend installs a "scoped custom element registry" polyfill and
+// replaces window.customElements while it boots. This module is loaded in
+// parallel with the frontend; when it runs first (common on phones, with a
+// cached page), the card ends up only in the old registry, HA cannot find it
+// and shows "Configuration error / Custom element doesn't exist" until a
+// reload. So: register now, and register again whenever the registry object
+// changes. HA rebuilds its error cards by itself once the element appears.
+const ELEMENTS = [
+  ["ecovolter-card", EcoVolterCard],
+  ["ecovolter-card-editor", EcoVolterCardEditor],
+];
+function registerElements() {
+  const registry = window.customElements;
+  for (const [name, cls] of ELEMENTS) {
+    try {
+      if (!registry.get(name)) registry.define(name, cls);
+    } catch (err) {
+      console.warn("EcoVolter card: could not register " + name, err);
+    }
+  }
+  return registry;
+}
+let registeredIn = registerElements();
+const watchRegistry = () => {
+  if (window.customElements !== registeredIn || !window.customElements.get("ecovolter-card")) {
+    registeredIn = registerElements();
+  }
+};
+// Watch for a while after page load (the swap happens during HA start-up),
+// then keep a slow safety check for long-lived app sessions.
+const fastWatch = setInterval(watchRegistry, 100);
+setTimeout(() => {
+  clearInterval(fastWatch);
+  setInterval(watchRegistry, 5000);
+}, 30000);
+window.addEventListener("load", watchRegistry);
+document.addEventListener("visibilitychange", watchRegistry);
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "ecovolter-card")) {
   window.customCards.push({
